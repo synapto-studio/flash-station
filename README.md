@@ -11,7 +11,7 @@ Synapto's browser app for the Initialisation Station and the Flash Station.
 - `index.html`, `app.css`, `js/` – the app.
 - `test/` – tests run in Node against a simulated ATtiny (`npm test`).
 
-The UPDI flashing code is a JavaScript port of Microchip's pymcuprog SerialUPDI stack (MIT licence).
+The UPDI flashing code is a JavaScript port of Microchip's pymcuprog SerialUPDI stack (MIT licence; see NOTICE-pymcuprog.txt).
 
 ## Tests
 
