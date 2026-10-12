@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flash Station</title>
+  <meta name="description" content="Synapto's tool for initialising and updating LED drives.">
+  <meta name="theme-color" content="#221e1c">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="./" aria-label="Flash Station home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="1.5" width="12" height="16" rx="4"/><rect x="9" y="17.5" width="6" height="5" rx="0.6"/><circle cx="12" cy="6.5" r="1.6"/><circle cx="12" cy="12" r="1.6"/></svg>
+      <span>Flash Station</span>
+    </a>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="t-init" aria-controls="p-init" aria-selected="true">Initialise</button>
+      <button role="tab" id="t-station" aria-controls="p-station" aria-selected="false">Flash Station</button>
+      <button role="tab" id="t-drives" aria-controls="p-drives" aria-selected="false">Drives</button>
+      <button role="tab" id="t-library" aria-controls="p-library" aria-selected="false">Library</button>
+    </nav>
+    <button class="libchip" id="libChip" type="button">No library folder</button>
+  </header>
+
+  <p class="banner" id="noSerial" hidden>Open this page in Chrome or Edge on your computer. Safari and Firefox can't talk to USB devices, so nothing can be flashed from here. You can still look around and use the simulated board.</p>
+
+  <main>
+    <!-- ============================== Initialise ============================== -->
+    <section class="panel" id="p-init" role="tabpanel" aria-labelledby="t-init">
+      <div class="init">
+        <aside class="stage" aria-live="polite">
+          <svg class="drive-art" id="driveArt" role="img" aria-label="Drawing of the drive and its LEDs"></svg>
+          <p class="stage-title" id="stageTitle">Ready</p>
+          <p class="stage-sub" id="stageSub">Pick the board on the jig to start.</p>
+          <div class="meter" aria-hidden="true"><span id="meterFill"></span></div>
+        </aside>
+
+        <ol class="steps">
+          <li class="step" data-step="board">
+            <h2><span class="n">1</span>Board on the jig</h2>
+            <div class="choice" role="radiogroup" aria-label="Board">
+              <button type="button" role="radio" data-family="core" aria-checked="false">
+                <strong>Core</strong><span>ATtiny412, 6 LEDs</span>
+              </button>
+              <button type="button" role="radio" data-family="pulse" aria-checked="true">
+                <strong>Pulse</strong><span>ATtiny1614, 8 LEDs and a mic</span>
+              </button>
+            </div>
+            <div class="switch" id="switchNote">
+              <div class="switch-track" aria-hidden="true"><span data-v="3V">3V</span><span data-v="5V">5V</span></div>
+              <p>Set the UPDI Friend switch to <b id="switchV">3V</b> <span id="switchWhy">before the pogo pin touches the board. Never 5V on Pulse: its UPDI pad feeds the mic's 3.3 V rail.</span></p>
+            </div>
+          </li>
+
+          <li class="step" data-step="prog">
+            <h2><span class="n">2</span>Programmer</h2>
+            <div class="row">
+              <button type="button" class="btn" id="connectBtn">Choose the UPDI Friend</button>
+              <button type="button" class="btn quiet" id="simBtn">Use a simulated board</button>
+            </div>
+            <p class="note" id="progStatus">Plug the UPDI Friend into the computer, then choose its port. Chrome remembers it next time.</p>
+            <details class="small">
+              <summary>Speed</summary>
+              <label class="inline">Line speed
+                <select id="baud">
+                  <option value="115200" selected>115200 (default)</option>
+                  <option value="230400">230400 (faster)</option>
+                  <option value="57600">57600 (if flashing is unreliable)</option>
+                </select>
+              </label>
+            </details>
+          </li>
+
+          <li class="step" data-step="check">
+            <h2><span class="n">3</span>Check the board</h2>
+            <p class="note">Board powered from its USB plug, pogo pin on the UPDI pad.</p>
+            <div class="row"><button type="button" class="btn" id="checkBtn" disabled>Check board</button></div>
+            <dl class="facts" id="facts" hidden></dl>
+            <ul class="warnings" id="warnings" hidden></ul>
+          </li>
+
+          <li class="step" data-step="engine">
+            <h2><span class="n">4</span>Engine and lighting</h2>
+            <label class="field">Engine
+              <select id="engineSel"></select>
+            </label>
+            <p class="note" id="engineNote"></p>
+            <label class="field">Lighting
+              <select id="routineSel"></select>
+            </label>
+            <p class="note" id="routineNote"></p>
+          </li>
+
+          <li class="step" data-step="drive">
+            <h2><span class="n">5</span>Drive details</h2>
+            <div class="fields">
+              <label class="field">Drive number
+                <span class="numwrap"><span id="driveLetter">P-</span><input id="driveNum" type="number" min="1" max="65535" inputmode="numeric"></span>
+              </label>
+              <label class="field">Board
+                <select id="boardSel"></select>
+              </label>
+              <label class="field">Casing code
+                <input id="casing" maxlength="4" value="SOTA" autocomplete="off" spellcheck="false">
+              </label>
+            </div>
+            <p class="note" id="boardNote"></p>
+            <p class="note warn" id="driveWarn" hidden></p>
+          </li>
+
+          <li class="step go" data-step="go">
+            <button type="button" class="btn primary" id="initBtn" disabled>Initialise</button>
+            <p class="note" id="goNote">Erases the chip, writes the engine with its lighting, sets the BOOTEND fuse, then writes the ID card. Everything is read back to check it.</p>
+            <details class="small" id="fallback">
+              <summary>Terminal fallback</summary>
+              <p>If the browser flasher misbehaves, the same job runs from the Mac's Terminal with pymcuprog (install once: <code>pip3 install pymcuprog</code>).</p>
+              <div class="row"><button type="button" class="btn quiet" id="fallbackBtn" disabled>Download the .hex for this board</button></div>
+              <pre class="cmd" id="fallbackCmd" hidden></pre>
+            </details>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============================== Flash Station ============================== -->
+    <section class="panel" id="p-station" role="tabpanel" aria-labelledby="t-station" hidden>
+      <div class="prose">
+        <h1>Flash Station</h1>
+        <p>This tab drives the XIAO station box: plug a sealed drive into its socket and send it new lighting through its USB power. It's the next part being built.</p>
+        <h2>What it will do first</h2>
+        <ul>
+          <li>Link test: show a colour on a plugged-in Pulse, saving nothing (about 23 s).</li>
+          <li>Send new settings to a Pulse running pulsetest (about 15 s).</li>
+          <li>Send a whole new engine to a Pulse (3 to 6 minutes).</li>
+          <li>Pick the drive from the register and log every send in its history.</li>
+        </ul>
+        <p>Core joins once coretest 1.3 has its settings receiver. Drives name themselves once the station hello is in pulsetest 1.1 and coretest 1.3.</p>
+      </div>
+    </section>
+
+    <!-- ============================== Drives ============================== -->
+    <section class="panel" id="p-drives" role="tabpanel" aria-labelledby="t-drives" hidden>
+      <div class="wide">
+        <h1>Drives</h1>
+        <p class="lead" id="drivesLead">Every board you initialise is listed here, with its history.</p>
+        <div class="tablewrap"><table class="table" id="drivesTable" hidden>
+          <thead><tr><th>Drive</th><th>Board</th><th>Casing</th><th>Engine</th><th>Lighting</th><th>Initialised</th><th>Chip serial</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============================== Library ============================== -->
+    <section class="panel" id="p-library" role="tabpanel" aria-labelledby="t-library" hidden>
+      <div class="wide">
+        <h1>Library</h1>
+        <p class="lead">A folder on this computer holding your engines, phase files, routines and the drive register. Nothing in it is uploaded.</p>
+        <div class="row">
+          <button type="button" class="btn" id="pickLibBtn">Choose library folder</button>
+          <button type="button" class="btn quiet" id="addEngineBtn">Add an engine file</button>
+          <input type="file" id="engineFile" accept=".hex" hidden>
+        </div>
+        <p class="note" id="libNote"></p>
+        <h2>Engines</h2>
+        <div class="tablewrap"><table class="table" id="enginesTable">
+          <thead><tr><th>File</th><th>Recognised as</th><th>For</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <h2>Where your engine files are</h2>
+        <p>They're in the zips from earlier chats. Copy these into the library's <code>engines</code> folder, or use Add an engine file:</p>
+        <ul>
+          <li>Pulse: <code>sota-pulse/out/pulse_1.0_full.hex</code> (bootloader, pulsetest and fuse together; the one for initialising).</li>
+          <li>Core: <code>sota-flash-station/station/firmware/sota_leds_v1.2_10mhz.hex</code> (the 10 MHz build the Flash Station needs).</li>
+        </ul>
+        <p>A good place for the folder is <code>Synapto Studio/Lighting/Library</code>. Inside Google Drive or iCloud Drive, it's on every computer you use.</p>
+      </div>
+    </section>
+  </main>
+
+  <details class="log" id="logBox">
+    <summary>Log</summary>
+    <pre id="log"></pre>
+  </details>
+</body>
+</html>

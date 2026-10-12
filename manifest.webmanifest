@@ -1,0 +1,11 @@
+{
+  "name": "Flash Station",
+  "short_name": "Flash Station",
+  "description": "Synapto's tool for initialising and updating LED drives.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#221e1c",
+  "theme_color": "#221e1c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
