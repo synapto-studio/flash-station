@@ -1,0 +1,47 @@
+# Roadmap
+
+One task per Claude Code session. Start each session with: "Read docs/ROADMAP.md and do task N." Tick it off here when it's done and checked.
+
+## Done
+- [x] **Initialise tab** (12 Oct 2026). Browser UPDI flasher, simulated chip, engine detection, ID card, library folder, drive register, Terminal fallback. Not yet run on a real board.
+
+## Next, in order
+
+### 1. Real-board bring-up (when the UPDI Friend arrives)
+Jonny runs this; Claude helps read results.
+- Pulse A1, switch on 3V, board on USB power, pogo pin on UPDI pad. Choose UPDI Friend → Check board. Expect: ATtiny1614, ID 1E9422, "pulsetest 1.0" or "Unknown firmware".
+- Initialise with `pulse_1.0_full.hex`. Expect: verified, start-up animation plays.
+- Repeat on a Core A at 5V with `sota_leds_v1.2_10mhz.hex`.
+- If anything fails: copy the Log, try 57600 baud, try the Terminal fallback. Fix in `js/updi.js` only with a matching change in `js/sim.js` and the pymcuprog tests passing.
+
+### 2. XIAO station firmware (private firmware repo, not this one)
+Arduino (Earle Philhower's RP2040 core), output a `.uf2`. USB serial command set, one line in, one line out:
+- `HELLO` → `SYNAPTO-STATION 0.1`
+- `SEND <baud> <stopbits> <hex> <gapMs>` → sends the bytes on D6 (idle high = full 5 V, 0 = dip), holds full supply for gapMs, replies `OK`. Bit-banged with a hardware timer so 100 baud (Beat) and 1000 baud (pulsetest) both work.
+- `SENSE` → average ADC reading on A0 (the sense wire), for drive detection later.
+- RGB LED: idle dim, sending orange, done green.
+Done when: a test harness proves bit timing within 2% at 100 and 1000 baud; Jonny's Pulse A2 shows a link-test colour.
+
+### 3. Flash Station tab (this repo)
+- Connect the station (Web Serial), check `HELLO`.
+- Pick the drive from the register (offer the last one used).
+- pulsetest: link test, send settings (patch plan), send whole engine (full plan). Port `test_plan`, `patch_plan`, `full_plan`, `header_frame`, `page_frame` from the Pi tool (`docs/STATION-PROTOCOL.md` has the formats).
+- Log every send in the drive's history.
+- A simulated station + simulated drive (bootloader frame decoder) for tests.
+Done when: generated frames match `test/ref_pulse_station.py` byte for byte, and a simulated drive ends with the new settings page and a valid trailer.
+
+### 4. Routine editor
+- Phase files per phase (load-up, standard, beat, recognition), versions, routines that pick one file per phase.
+- Saved colour sets (palettes) as library items.
+- Drive profiles: LED count, groups, each LED's position from plug to logo (`casings/*.json`).
+- Live previews: port the maths from the SOTA LED Preview and SOTA Pulse Preview pages (Jonny exports their HTML into this repo first; they already match the firmware frame for frame).
+Done when: a routine built in the editor initialises a simulated board and the preview matches the settings sent.
+
+### 5. Station hello (needs firmware: pulsetest 1.1, coretest 1.3)
+Drive plays its station animation only on the Flash Station; the pulse back into the station flickers ~1 kHz carrying family, drive number and board (ID card bytes 5–8). Station reads it on A0. App opens that drive automatically.
+
+## Later
+- Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
+- 3D drive preview from Fusion exports (.glb) using the drive profiles.
+- rekordbox import: read beat grids and sections from a DJ's export on the drive, build per-track routines.
+- Owner version of the app, modelled on SoundSwitch: good defaults first, custom editing for people who want it.
