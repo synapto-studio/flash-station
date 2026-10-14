@@ -216,3 +216,11 @@ details.small > *:not(summary) { margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------------------------------------------------------------- Flash Station tab */
+.fs h2 { margin-top: 28px; }
+.fs .inline { display: inline-flex; gap: 8px; align-items: center; }
+.fs-meter { margin: 6px 0 10px; max-width: 420px; }
+.fs-meter span { transition: width 0.1s linear; }
+.fs .inline { white-space: nowrap; }
+.fs input[type='color'] { width: 44px; height: 34px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }

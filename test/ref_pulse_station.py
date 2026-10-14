@@ -5,6 +5,12 @@ Reference: the parts of the Pi tool (station/pulse_station.py v1.0, from the
 in js/engines.js can be checked byte for byte.
 
   python3 test/ref_pulse_station.py image <linked_app.hex> <boot.hex> <out_full.hex> [name=value ...]
+  python3 test/ref_pulse_station.py plan test <r> <g> <b>
+  python3 test/ref_pulse_station.py plan patch|full <linked_app.hex> [name=value ...]
+
+The frame and plan functions at the bottom ("Frames and plans") are written straight from
+docs/STATION-PROTOCOL.md, independently of js/station.js, so the two can be compared.
+`plan` prints the steps as JSON: [[baud, stopbits, hex, gapMs], ...].
 """
 import struct
 import sys
@@ -166,7 +172,92 @@ class Image:
         return mem
 
 
+# ---------------------------------------------------------------- Frames and plans
+BAUD = 1000
+TEST_REPEATS = 110  # 0.1 s gaps + 80 ms per frame: about 20 s
+
+
+def frame(ftype, payload):
+    body = bytes([ftype, len(payload)]) + bytes(payload)
+    return b'\x5a\xa5' + body + struct.pack('<H', crc16(body))
+
+
+def wake(ms):
+    return b'\xf0' * (ms // 10)  # 0xF0 at 1000 baud = 10 ms per byte
+
+
+def header_frame(img, patch, pages):
+    mask = bytearray(26)
+    for p in pages:
+        mask[p // 8] |= 1 << (p % 8)
+    payload = struct.pack('<HBHHHB', img.image_id(), 1 if patch else 0, len(img.app), crc16(img.app),
+                          img.code_crc(), img.set_page) + bytes(mask)
+    assert len(payload) == 36
+    return frame(ord('H'), payload)
+
+
+def page_frame(img, patch, index, data):
+    payload = struct.pack('<HBB', img.image_id(), 1 if patch else 0, index) + bytes(data)
+    assert len(payload) == 68
+    return frame(ord('P'), payload)
+
+
+def test_plan(r, g, b):
+    steps = [(BAUD, 1, wake(3000), 0)]
+    steps += [(BAUD, 1, frame(ord('T'), bytes([r, g, b])), 100)] * TEST_REPEATS
+    return steps
+
+
+def patch_plan(img):
+    pages = dict(img.pages())
+    steps = [(BAUD, 1, wake(5000), 0)]
+    for copy in range(4):
+        if copy:
+            steps.append((BAUD, 1, wake(400), 0))
+        steps.append((BAUD, 1, header_frame(img, True, [img.set_page, TRAILER_PAGE]), 150))
+        steps.append((BAUD, 1, page_frame(img, True, img.set_page, pages[img.set_page]), 30))
+        steps.append((BAUD, 1, page_frame(img, True, TRAILER_PAGE, pages[TRAILER_PAGE]), 30))
+    return steps
+
+
+def full_plan(img):
+    pages = img.pages()
+    all_pages = [p for p, _ in pages]
+    steps = [(BAUD, 1, wake(5000), 0)]
+    first = True
+    for _ in range(2):
+        for n, (p, d) in enumerate(pages):
+            if n % 8 == 0:
+                if not first:
+                    steps.append((BAUD, 1, wake(400), 0))
+                steps.append((BAUD, 1, header_frame(img, False, all_pages), 150))
+            first = False
+            steps.append((BAUD, 1, page_frame(img, False, p, d), 30))
+    return steps
+
+
+def plan_json(steps):
+    import json
+    return json.dumps([[b, s, d.hex().upper(), g] for b, s, d, g in steps])
+
+
+def plan_main(args):
+    kind = args[0]
+    if kind == 'test':
+        print(plan_json(test_plan(*[int(x) for x in args[1:4]])))
+        return
+    base = Image.from_hex(args[1])
+    s = base.settings
+    for kv in args[2:]:
+        k, v = kv.split('=', 1)
+        s[k] = [int(x) for x in v.split(',')] if ',' in v else int(v)
+    img = Image(base.app, s)
+    print(plan_json(patch_plan(img) if kind == 'patch' else full_plan(img)))
+
+
 def main():
+    if sys.argv[1] == 'plan':
+        return plan_main(sys.argv[2:])
     _, cmd, app_hex, boot_hex, out = sys.argv[:5]
     sets = sys.argv[5:]
     base = Image.from_hex(app_hex)
