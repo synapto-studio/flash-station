@@ -9,6 +9,8 @@ Live at https://synapto-studio.github.io/flash-station/ (GitHub Pages from `main
 ## Who you're working with
 Jonny: product designer/engineer, new to software. Explain in plain words, short steps and tables, no jargon without a one-line meaning. Always say which station and which board (Core / Pulse) an answer is for.
 
+Jonny wants regular reminders on using Claude efficiently. When a session gets long, drifts to a new topic, or a task is finished, say so in one line and suggest starting a fresh session, with the exact first message to paste (usually "Read docs/ROADMAP.md and do task N"). Tick finished tasks off in `docs/ROADMAP.md` before ending.
+
 ## Commands
 - `npm test` – all JS tests (Node 22, `node --test`). Run after every change.
 - `python3 test/pymcuprog_bytes.py` – browser flasher must send byte-for-byte what pymcuprog sends (needs `pip install pymcuprog`). Run after touching `js/updi.js` or `js/sim.js`.
