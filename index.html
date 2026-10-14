@@ -23,6 +23,7 @@
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" id="t-init" aria-controls="p-init" aria-selected="true">Initialise</button>
       <button role="tab" id="t-station" aria-controls="p-station" aria-selected="false">Flash Station</button>
+      <button role="tab" id="t-editor" aria-controls="p-editor" aria-selected="false">Routines</button>
       <button role="tab" id="t-drives" aria-controls="p-drives" aria-selected="false">Drives</button>
       <button role="tab" id="t-library" aria-controls="p-library" aria-selected="false">Library</button>
     </nav>
@@ -177,6 +178,72 @@
           <tbody></tbody>
         </table></div>
         <p class="note" id="fsHistoryNote"></p>
+      </div>
+    </section>
+
+    <!-- ============================== Routines ============================== -->
+    <section class="panel" id="p-editor" role="tabpanel" aria-labelledby="t-editor" hidden>
+      <div class="wide ed">
+        <h1>Routines</h1>
+        <p class="lead">Build the lighting: a phase file for each part of the show, saved colour sets, and routines that pick one of each. A routine then shows up as a lighting choice on the Initialise and Flash Station tabs.</p>
+        <p class="note" id="edLead"></p>
+        <div class="ed-grid">
+          <div class="ed-main">
+            <label class="field">Editing for
+              <select id="edEngine"></select>
+            </label>
+            <p class="note" id="edStatus" aria-live="polite"></p>
+
+            <h2>Phase files</h2>
+            <p class="note">One part of the show, saved as a file. Saving again never overwrites: it makes the next version, so a routine can keep using the version it was built with.</p>
+            <div class="fields">
+              <label class="field">Phase <select id="edPhase"></select></label>
+              <label class="field">Start from <select id="edPhaseFile"></select></label>
+              <label class="field">Name <input id="edPhaseName" autocomplete="off" placeholder="Slow rise"></label>
+            </div>
+            <p class="note" id="edPhaseNote"></p>
+            <div class="ed-fields" id="edPhaseFields"></div>
+            <div class="row"><button type="button" class="btn" id="edPhaseSave">Save as new version</button></div>
+
+            <h2>Colour sets</h2>
+            <p class="note">The colours for this engine. A routine can use one set across all its phases.</p>
+            <div class="fields">
+              <label class="field">Colour set <select id="edPalette"></select></label>
+              <label class="field">Name <input id="edPaletteName" autocomplete="off" placeholder="Ice"></label>
+            </div>
+            <div class="ed-fields" id="edPaletteFields"></div>
+            <div class="row"><button type="button" class="btn" id="edPaletteSave">Save colour set</button></div>
+
+            <h2>Routine</h2>
+            <p class="note">Picks one phase file per phase, a colour set and an overall brightness. Anything left on "Engine default" keeps the engine's own look.</p>
+            <div class="fields">
+              <label class="field">Open <select id="edRoutineOpen"></select></label>
+              <label class="field">Name <input id="edRoutineName" autocomplete="off" placeholder="Night show"></label>
+            </div>
+            <div class="ed-fields" id="edRoutinePhases"></div>
+            <div class="fields">
+              <label class="field">Colour set <select id="edRoutinePalette"></select></label>
+              <label class="field">Brightness (0–255) <input id="edRoutineBrightness" type="number" min="0" max="255" placeholder="Engine default"></label>
+            </div>
+            <p class="note" id="edRoutineValues"></p>
+            <div class="row"><button type="button" class="btn primary" id="edRoutineSave">Save routine</button></div>
+
+            <h2>Drive profile</h2>
+            <p class="note">The LEDs of one casing: how many, which group each is in, and where each sits from the plug (0) to the logo (1). Saved as <code>casings/CODE.json</code>.</p>
+            <div class="fields">
+              <label class="field">Open <select id="edProfileOpen"></select></label>
+              <label class="field">Board <select id="edProfileFamily"><option value="pulse">Pulse</option><option value="core">Core</option></select></label>
+              <label class="field">Casing code <input id="edProfileCode" maxlength="4" value="SOTA" autocomplete="off" spellcheck="false"></label>
+            </div>
+            <label class="field">Groups (comma separated) <input id="edProfileGroups" autocomplete="off"></label>
+            <div class="tablewrap"><table class="table" id="edProfileTable"><thead><tr><th>LED</th><th>Group</th><th>Place, plug to logo</th></tr></thead><tbody></tbody></table></div>
+            <div class="row"><button type="button" class="btn" id="edProfileSave">Save drive profile</button></div>
+          </div>
+          <aside class="ed-preview">
+            <svg class="drive-art" id="edArt" role="img" aria-label="Preview of the drive's steady colours"></svg>
+            <p class="note" id="edPreviewNote"></p>
+          </aside>
+        </div>
       </div>
     </section>
 

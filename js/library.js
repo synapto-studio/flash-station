@@ -4,14 +4,15 @@
 //
 //   engines/    .hex files (any names; recognised by the tag inside)
 //   phases/     phase files (.json)
+//   palettes/   saved colour sets (.json)
 //   routines/   routines (.json)
 //   drives/     the drive register, one .json per drive (P-0007.json)
-//   casings/    CAD models and LED positions (Stage 2)
+//   casings/    drive profiles: LED count, groups, LED positions (.json); CAD models later
 
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
 
-export const FOLDERS = ['engines', 'phases', 'routines', 'drives', 'casings'];
+export const FOLDERS = ['engines', 'phases', 'palettes', 'routines', 'drives', 'casings'];
 
 // ---------------------------------------------------------------- storage backends
 class FolderStore {
@@ -186,6 +187,14 @@ export class Library {
     return this.jsonFiles('phases');
   }
 
+  async palettes() {
+    return (await this.jsonFiles('palettes')).map((p) => p.data);
+  }
+
+  async profiles() {
+    return (await this.jsonFiles('casings')).map((p) => p.data).filter((d) => d && d.code);
+  }
+
   async drives() {
     return (await this.jsonFiles('drives')).map((d) => d.data).filter((d) => d && d.drive);
   }
@@ -205,21 +214,4 @@ export class Library {
   }
 }
 
-// A routine names one phase file per phase; each phase file holds settings for that phase.
-// Resolved over the engine's defaults, so a missing phase keeps the engine's own look.
-export async function resolveRoutine(library, routine, engineDefaults) {
-  const settings = structuredClone(engineDefaults);
-  const phases = await library.phases();
-  for (const [phase, ref] of Object.entries(routine.phases || {})) {
-    if (!ref) continue;
-    const [name, version] = String(ref).split('@');
-    const matches = phases.filter((p) => p.data.name === name && p.data.phase === phase);
-    const pick = version ? matches.find((p) => String(p.data.version) === version) : matches.sort((a, b) => (b.data.version || 0) - (a.data.version || 0))[0];
-    if (!pick) throw new Error(`Routine ${routine.name}: phase file ${ref} (${phase}) isn't in the library.`);
-    Object.assign(settings, pick.data.settings);
-  }
-  Object.assign(settings, routine.shared || {});
-  settings.tag = engineDefaults.tag;
-  settings.layout = engineDefaults.layout;
-  return settings;
-}
+export { resolveRoutine } from './routines.js';

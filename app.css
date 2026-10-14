@@ -224,3 +224,24 @@ details.small > *:not(summary) { margin-top: 10px; }
 .fs-meter span { transition: width 0.1s linear; }
 .fs .inline { white-space: nowrap; }
 .fs input[type='color'] { width: 44px; height: 34px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }
+
+/* ---------------------------------------------------------------- Routines tab */
+.wide.ed { max-width: 1160px; }
+.ed-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 48px; align-items: start; }
+.ed-preview { position: sticky; top: 96px; text-align: center; }
+.ed h2 { margin-top: 36px; }
+.ed .fields { grid-template-columns: repeat(3, minmax(0, 200px)); }
+.ed-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 20px; margin-bottom: 12px; }
+.ed-fields .field { max-width: none; }
+.ed-fields .wide-field { grid-column: 1 / -1; }
+.field-label { font-weight: 500; margin-bottom: 6px; }
+.field.colour input[type='color'] { width: 64px; height: 38px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }
+.table.cranks input { width: 90px; padding: 6px 8px; }
+#edProfileTable select { width: auto; }
+#edProfileTable .pos { display: flex; align-items: center; gap: 12px; }
+#edProfileTable input[type='range'] { width: 180px; padding: 0; accent-color: var(--resin); }
+@media (max-width: 860px) {
+  .ed-grid { grid-template-columns: 1fr; gap: 16px; }
+  .ed-preview { position: static; order: -1; }
+  .ed .fields { grid-template-columns: 1fr 1fr; }
+}
