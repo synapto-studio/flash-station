@@ -14,7 +14,8 @@ Jonny runs this; Claude helps read results.
 - Repeat on a Core A at 5V with `sota_leds_v1.2_10mhz.hex`.
 - If anything fails: copy the Log, try 57600 baud, try the Terminal fallback. Fix in `js/updi.js` only with a matching change in `js/sim.js` and the pymcuprog tests passing.
 
-### 2. XIAO station firmware (private firmware repo, not this one)
+### 2. XIAO station firmware (private firmware repo, not this one) — firmware done 14 Oct 2026, bench test to do
+station 0.1 is in the firmware repo's `station/` (commands in `docs/STATION-PROTOCOL.md`). Checked in simulation and on an emulated RP2040. Left: build the box, flash the `.uf2`, press BOOT with a Pulse A2 in the socket and see the link-test colour.
 Arduino (Earle Philhower's RP2040 core), output a `.uf2`. USB serial command set, one line in, one line out:
 - `HELLO` → `SYNAPTO-STATION 0.1`
 - `SEND <baud> <stopbits> <hex> <gapMs>` → sends the bytes on D6 (idle high = full 5 V, 0 = dip), holds full supply for gapMs, replies `OK`. Bit-banged with a hardware timer so 100 baud (Beat) and 1000 baud (pulsetest) both work.

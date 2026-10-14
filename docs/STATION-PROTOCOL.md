@@ -9,9 +9,23 @@ XIAO 5V ────────────────────────
 socket GND (black) ──┬── 1N4001, stripe towards XIAO GND ──┐
                      └── BC337 C ── E ──────────────────────┴── XIAO GND
 XIAO D6 (TX, GPIO0) ── 470 Ω ── BC337 B
-socket GND (black) ──────────────────────────── XIAO A0 (sense wire, below ~1 V)
+socket GND (black) ── 10 kΩ ─────────────────── XIAO A0 (sense wire, below ~1 V)
 ```
+The 10 kΩ protects A0 if the diode is ever fitted backwards. Status LEDs (2 white on D4/D5, 2 RGB on D1–D3 and D10–D8) are in the firmware repo's `station/README.md`.
 Line idle (high) = transistor on = full 5 V. A 0 bit = transistor off = dip. Same as the Pi's pin 8 in the old guides.
+
+## Station commands (firmware station 0.1)
+USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
+
+| Send | Reply |
+| --- | --- |
+| `HELLO` | `SYNAPTO-STATION 0.1` |
+| `SEND <baud> <stopbits> <hex> <gapMs>` | `OK` after the last stop bit has gone and the line has then been held at full supply for gapMs (plus about one bit). Baud 70–20000, stop bits 1–2, 1–4096 bytes (hex, either case), gap 0–60000 |
+| `SENSE` | `SENSE <raw 0-4095> <millivolts>` on A0 (average of 64) |
+| `SHOW` | `OK` (replays the station's start-up light show) |
+| anything wrong | `ERR <what to fix>` |
+
+One SEND per frame, as the Pi tool did one `write` + `flush` + `sleep`: e.g. pulsetest's settings plan is `SEND 1000 1 F0F0…(500 bytes) 0`, then `SEND 1000 1 5AA548… 150`, and so on. A 5 s wake-up call is 500 bytes, so it fits in one SEND. Bits are timed by the RP2040's PIO, so USB and the lights can't move them; between SENDs the line rests high for the USB turn-around (0.2–3 ms, like the Pi's flush/sleep wobble).
 
 ## pulsetest (bootloader protocol), 1000 baud, 8N1, LSB first
 
