@@ -9,6 +9,7 @@ import { toHex } from './intelhex.js';
 import { encodeCard, driveLabel } from './idcard.js';
 import { Library, MemoryStore, rememberedFolder, reconnectFolder, pickFolder, folderAccessSupported, resolveRoutine } from './library.js';
 import { demoEngines } from './demo.js';
+import { initFlashTab } from './flash-tab.js';
 
 const $ = (id) => document.getElementById(id);
 const CHIP_KEY = { core: 'attiny412', pulse: 'attiny1614' };
@@ -28,6 +29,7 @@ const state = {
 };
 
 const art = new DriveArt($('driveArt'));
+let flashTab = null;
 
 // ---------------------------------------------------------------- helpers
 function log(msg) {
@@ -112,6 +114,7 @@ async function refreshLibrary() {
   }
   renderDrives();
   refreshEngineOptions();
+  if (flashTab) flashTab.refresh();
 }
 
 async function chooseLibrary() {
@@ -571,6 +574,8 @@ window.addEventListener('beforeunload', (e) => {
 
 // ---------------------------------------------------------------- start
 async function start() {
+  flashTab = initFlashTab({ $, el, log, state, setLibrary, refreshLibrary });
+  if (!webSerialSupported()) $('fsConnect').disabled = true;
   if (!webSerialSupported()) {
     $('noSerial').hidden = false;
     $('connectBtn').disabled = true;

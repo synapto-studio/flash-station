@@ -131,17 +131,52 @@
 
     <!-- ============================== Flash Station ============================== -->
     <section class="panel" id="p-station" role="tabpanel" aria-labelledby="t-station" hidden>
-      <div class="prose">
+      <div class="wide fs">
         <h1>Flash Station</h1>
-        <p>This tab drives the XIAO station box: plug a sealed drive into its socket and send it new lighting through its USB power. It's the next part being built.</p>
-        <h2>What it will do first</h2>
-        <ul>
-          <li>Link test: show a colour on a plugged-in Pulse, saving nothing (about 23 s).</li>
-          <li>Send new settings to a Pulse running pulsetest (about 15 s).</li>
-          <li>Send a whole new engine to a Pulse (3 to 6 minutes).</li>
-          <li>Pick the drive from the register and log every send in its history.</li>
-        </ul>
-        <p>Core joins once coretest 1.3 has its settings receiver. Drives name themselves once the station hello is in pulsetest 1.1 and coretest 1.3.</p>
+        <p class="lead">Plug a sealed drive into the station box and send it new lighting through its USB power. Pulse with pulsetest only for now; Core joins with coretest 1.3.</p>
+
+        <h2>1 · Station</h2>
+        <div class="row">
+          <button type="button" class="btn" id="fsConnect">Choose the station</button>
+          <button type="button" class="btn quiet" id="fsSim">Use a simulated station</button>
+          <button type="button" class="btn quiet" id="fsDisconnect" hidden>Disconnect</button>
+        </div>
+        <p class="note" id="fsStatus">Plug the XIAO station box into the computer, then choose its port.</p>
+
+        <h2>2 · Drive</h2>
+        <label class="field">Drive in the socket
+          <select id="fsDrive"></select>
+        </label>
+        <p class="note" id="fsDriveNote"></p>
+
+        <h2>3 · Engine and lighting</h2>
+        <label class="field">Engine
+          <select id="fsEngine"></select>
+        </label>
+        <label class="field">Lighting
+          <select id="fsRoutine"></select>
+        </label>
+        <p class="note" id="fsEngineNote"></p>
+
+        <h2>4 · Send</h2>
+        <div class="row">
+          <label class="inline">Link-test colour <input type="color" id="fsColour" value="#ff8a2a"></label>
+          <button type="button" class="btn" id="fsTest">Link test (about 23 s)</button>
+        </div>
+        <div class="row">
+          <button type="button" class="btn primary" id="fsSettings">Send settings (about 15 s)</button>
+          <button type="button" class="btn" id="fsEngineSend">Send whole engine (3 to 6 min)</button>
+          <button type="button" class="btn quiet" id="fsStop" hidden>Stop</button>
+        </div>
+        <div class="meter fs-meter" aria-hidden="true"><span id="fsMeter"></span></div>
+        <p class="note" id="fsProgress" aria-live="polite">Link test shows a colour and saves nothing. Keep the drive in the socket until the box says it's done.</p>
+
+        <h2>This drive's history</h2>
+        <div class="tablewrap"><table class="table" id="fsHistory" hidden>
+          <thead><tr><th>When</th><th>Station</th><th>What</th><th>Engine</th><th>Result</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <p class="note" id="fsHistoryNote"></p>
       </div>
     </section>
 

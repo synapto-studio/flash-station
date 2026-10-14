@@ -3,6 +3,7 @@
 One task per Claude Code session. Start each session with: "Read docs/ROADMAP.md and do task N." Tick it off here when it's done and checked.
 
 ## Done
+- [x] **Flash Station tab** (14 Oct 2026). `js/station.js` (frames, link-test / settings / whole-engine plans, station client), `js/sim-station.js` (simulated box and drive), `js/flash-tab.js` (the tab). Frames match `test/ref_pulse_station.py` byte for byte; a simulated drive ends with the new settings and a valid trailer. Every send is logged in the drive's history. Not yet run against the real box. Two details were not in the docs and were chosen (check against the Pi tool): the header's page mask lists the pages that follow (settings page + trailer for a settings send, every page for a whole engine), and a whole-engine send puts a header before the first page and every 8th page of each pass.
 - [x] **Initialise tab** (12 Oct 2026). Browser UPDI flasher, simulated chip, engine detection, ID card, library folder, drive register, Terminal fallback. Not yet run on a real board.
 
 ## Next, in order
@@ -23,7 +24,7 @@ Arduino (Earle Philhower's RP2040 core), output a `.uf2`. USB serial command set
 - RGB LED: idle dim, sending orange, done green.
 Done when: a test harness proves bit timing within 2% at 100 and 1000 baud; Jonny's Pulse A2 shows a link-test colour.
 
-### 3. Flash Station tab (this repo)
+### 3. Flash Station tab (this repo) — DONE 14 Oct 2026, see Done above
 - Connect the station (Web Serial), check `HELLO`.
 - Pick the drive from the register (offer the last one used).
 - pulsetest: link test, send settings (patch plan), send whole engine (full plan). Port `test_plan`, `patch_plan`, `full_plan`, `header_frame`, `page_frame` from the Pi tool (`docs/STATION-PROTOCOL.md` has the formats).
