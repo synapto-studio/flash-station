@@ -24,6 +24,7 @@
       <button role="tab" id="t-init" aria-controls="p-init" aria-selected="true">Initialise</button>
       <button role="tab" id="t-station" aria-controls="p-station" aria-selected="false">Flash Station</button>
       <button role="tab" id="t-drives" aria-controls="p-drives" aria-selected="false">Drives</button>
+      <button role="tab" id="t-routines" aria-controls="p-routines" aria-selected="false">Routines</button>
       <button role="tab" id="t-library" aria-controls="p-library" aria-selected="false">Library</button>
     </nav>
     <button class="libchip" id="libChip" type="button">No library folder</button>
@@ -187,6 +188,57 @@
         <p class="lead" id="drivesLead">Every board you initialise is listed here, with its history.</p>
         <div class="tablewrap"><table class="table" id="drivesTable" hidden>
           <thead><tr><th>Drive</th><th>Board</th><th>Casing</th><th>Engine</th><th>Lighting</th><th>Initialised</th><th>Chip serial</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============================== Routines ============================== -->
+    <section class="panel" id="p-routines" role="tabpanel" aria-labelledby="t-routines" hidden>
+      <div class="wide">
+        <h1>Routines</h1>
+        <p class="lead">A phase file holds the settings for one part of the show. A routine picks one phase file for each part, and the drive gets the result. Saving a phase file again makes a new version; the old one stays.</p>
+        <label class="field">Engine these are for
+          <select id="rtEngine"></select>
+        </label>
+        <p class="note" id="rtNote"></p>
+
+        <h2>1 · Phase files</h2>
+        <div class="row">
+          <label class="field">Phase
+            <select id="rtPhase"></select>
+          </label>
+          <label class="field">Start from
+            <select id="rtBase"></select>
+          </label>
+        </div>
+        <div class="fields" id="rtFields"></div>
+        <div class="row">
+          <label class="field">Name
+            <input type="text" id="rtPhaseName" placeholder="loadup_slow" autocomplete="off" spellcheck="false">
+          </label>
+          <button type="button" class="btn" id="rtSavePhase">Save phase file</button>
+        </div>
+        <p class="note" id="rtPhaseNote"></p>
+        <div class="tablewrap"><table class="table" id="rtPhaseTable">
+          <thead><tr><th>Phase file</th><th>Phase</th><th>Versions</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+
+        <h2>2 · Routines</h2>
+        <div class="row">
+          <label class="field">Name
+            <input type="text" id="rtName" placeholder="club_night" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+        <div class="fields" id="rtPicks"></div>
+        <div class="fields" id="rtShared"></div>
+        <div class="row">
+          <button type="button" class="btn" id="rtSaveRoutine">Save routine</button>
+        </div>
+        <p class="note" id="rtRoutineNote"></p>
+        <div class="tablewrap"><table class="table" id="rtRoutineTable">
+          <thead><tr><th>Routine</th><th>Phase files</th><th>Changes from the engine</th></tr></thead>
           <tbody></tbody>
         </table></div>
       </div>

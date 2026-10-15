@@ -3,6 +3,7 @@
 One task per Claude Code session. Start each session with: "Read docs/ROADMAP.md and do task N." Tick it off here when it's done and checked.
 
 ## Done
+- [x] **Routine editor, part 1: phase files and routines** (15 Oct 2026). `js/routines.js` (logic), `js/routines-tab.js` (new Routines tab), `test/routines.test.mjs`. Phase files per phase (load-up, standard, beat; recognition is listed but empty until station-hello firmware), saved as `phases/<name>_v<n>.json`; saving again makes the next version and keeps the old one. Routines pick one phase file per phase (newest, or pinned like `slow@1`) plus shared brightness and colours, saved as `routines/<name>.json`. A routine built this way initialises a simulated board and the board holds exactly what it resolved to. Still open in task 4: saved colour sets, drive profiles, live previews. The Core `cranks` table isn't editable in the tab yet.
 - [x] **Flash Station tab** (14 Oct 2026). `js/station.js` (frames, link-test / settings / whole-engine plans, station client), `js/sim-station.js` (simulated box and drive), `js/flash-tab.js` (the tab). Frames match `test/ref_pulse_station.py` byte for byte; a simulated drive ends with the new settings and a valid trailer. Every send is logged in the drive's history. Not yet run against the real box. Two details were not in the docs and were chosen (check against the Pi tool): the header's page mask lists the pages that follow (settings page + trailer for a settings send, every page for a whole engine), and a whole-engine send puts a header before the first page and every 8th page of each pass.
 - [x] **Initialise tab** (12 Oct 2026). Browser UPDI flasher, simulated chip, engine detection, ID card, library folder, drive register, Terminal fallback. Not yet run on a real board.
 
@@ -32,8 +33,8 @@ Done when: a test harness proves bit timing within 2% at 100 and 1000 baud; Jonn
 - A simulated station + simulated drive (bootloader frame decoder) for tests.
 Done when: generated frames match `test/ref_pulse_station.py` byte for byte, and a simulated drive ends with the new settings page and a valid trailer.
 
-### 4. Routine editor
-- Phase files per phase (load-up, standard, beat, recognition), versions, routines that pick one file per phase.
+### 4. Routine editor (phase files + routines done 15 Oct 2026; rest below still to do)
+- ~~Phase files per phase (load-up, standard, beat, recognition), versions, routines that pick one file per phase.~~ Done.
 - Saved colour sets (palettes) as library items.
 - Drive profiles: LED count, groups, each LED's position from plug to logo (`casings/*.json`).
 - Live previews: port the maths from the SOTA LED Preview and SOTA Pulse Preview pages (Jonny exports their HTML into this repo first; they already match the firmware frame for frame).

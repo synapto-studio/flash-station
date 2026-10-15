@@ -10,6 +10,7 @@ import { encodeCard, driveLabel } from './idcard.js';
 import { Library, MemoryStore, rememberedFolder, reconnectFolder, pickFolder, folderAccessSupported, resolveRoutine } from './library.js';
 import { demoEngines } from './demo.js';
 import { initFlashTab } from './flash-tab.js';
+import { initRoutinesTab } from './routines-tab.js';
 
 const $ = (id) => document.getElementById(id);
 const CHIP_KEY = { core: 'attiny412', pulse: 'attiny1614' };
@@ -30,6 +31,7 @@ const state = {
 
 const art = new DriveArt($('driveArt'));
 let flashTab = null;
+let routinesTab = null;
 
 // ---------------------------------------------------------------- helpers
 function log(msg) {
@@ -60,7 +62,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // ---------------------------------------------------------------- tabs
-const TABS = ['init', 'station', 'drives', 'library'];
+const TABS = ['init', 'station', 'drives', 'routines', 'library'];
 function showTab(name) {
   for (const t of TABS) {
     $(`t-${t}`).setAttribute('aria-selected', String(t === name));
@@ -115,6 +117,7 @@ async function refreshLibrary() {
   renderDrives();
   refreshEngineOptions();
   if (flashTab) flashTab.refresh();
+  if (routinesTab) routinesTab.refresh();
 }
 
 async function chooseLibrary() {
@@ -575,6 +578,7 @@ window.addEventListener('beforeunload', (e) => {
 // ---------------------------------------------------------------- start
 async function start() {
   flashTab = initFlashTab({ $, el, log, state, setLibrary, refreshLibrary });
+  routinesTab = initRoutinesTab({ $, el, log, state, setLibrary, refreshLibrary });
   if (!webSerialSupported()) $('fsConnect').disabled = true;
   if (!webSerialSupported()) {
     $('noSerial').hidden = false;

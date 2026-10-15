@@ -223,4 +223,4 @@ details.small > *:not(summary) { margin-top: 10px; }
 .fs-meter { margin: 6px 0 10px; max-width: 420px; }
 .fs-meter span { transition: width 0.1s linear; }
 .fs .inline { white-space: nowrap; }
-.fs input[type='color'] { width: 44px; height: 34px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }
+.fields input[type='color'], .fs input[type='color'] { width: 44px; height: 34px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }

@@ -10,6 +10,7 @@
 
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
+import { applyRoutine } from './routines.js';
 
 export const FOLDERS = ['engines', 'phases', 'routines', 'drives', 'casings'];
 
@@ -205,21 +206,7 @@ export class Library {
   }
 }
 
-// A routine names one phase file per phase; each phase file holds settings for that phase.
-// Resolved over the engine's defaults, so a missing phase keeps the engine's own look.
-export async function resolveRoutine(library, routine, engineDefaults) {
-  const settings = structuredClone(engineDefaults);
-  const phases = await library.phases();
-  for (const [phase, ref] of Object.entries(routine.phases || {})) {
-    if (!ref) continue;
-    const [name, version] = String(ref).split('@');
-    const matches = phases.filter((p) => p.data.name === name && p.data.phase === phase);
-    const pick = version ? matches.find((p) => String(p.data.version) === version) : matches.sort((a, b) => (b.data.version || 0) - (a.data.version || 0))[0];
-    if (!pick) throw new Error(`Routine ${routine.name}: phase file ${ref} (${phase}) isn't in the library.`);
-    Object.assign(settings, pick.data.settings);
-  }
-  Object.assign(settings, routine.shared || {});
-  settings.tag = engineDefaults.tag;
-  settings.layout = engineDefaults.layout;
-  return settings;
+// Kept for the Initialise and Flash Station tabs: a routine laid over the engine's defaults.
+export function resolveRoutine(library, routine, engineDefaults) {
+  return applyRoutine(library, routine, { tag: engineDefaults.tag, label: engineDefaults.tag, defaults: engineDefaults });
 }
