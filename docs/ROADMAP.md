@@ -48,6 +48,6 @@ Drive plays its station animation only on the Flash Station; the pulse back into
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
-- 3D drive preview from Fusion exports (.glb) using the drive profiles.
+- 3D drive preview from Fusion exports (.glb) using the drive profiles. Plan (15 Oct 2026): once the enclosure is on, Jonny exports the enclosure and the PCB (PCB is 1 mm thick). Each simulated LED gets mapped to its real position on the board, and the whole drive lights up, not just one side. Until then the Routines tab draws one side with estimated positions (`LED_SPOTS` in `js/routines-tab.js`: heights from Jonny's measurements, board and plug widths and LED spacing are guesses).
 - rekordbox import: read beat grids and sections from a DJ's export on the drive, build per-track routines.
 - Owner version of the app, modelled on SoundSwitch: good defaults first, custom editing for people who want it.
