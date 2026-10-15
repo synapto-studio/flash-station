@@ -12,6 +12,7 @@
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
 import { isPalette, paletteFileName } from './palettes.js';
+import { isPhaseFile, phaseFileName } from './phases.js';
 
 export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings'];
 
@@ -188,6 +189,22 @@ export class Library {
     return this.jsonFiles('phases');
   }
 
+  // Phase files for one board (and optionally one phase), newest version of each name last.
+  async phaseFiles(family, phase) {
+    return (await this.phases()).map((f) => f.data)
+      .filter((p) => isPhaseFile(p) && (!family || !p.family || p.family === family) && (!phase || p.phase === phase))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.version - b.version);
+  }
+
+  // Saves a phase file as the next version of its name. An older version is never overwritten.
+  async savePhaseFile(file) {
+    if (!isPhaseFile(file)) throw new Error('That phase file is not complete.');
+    const same = (await this.phaseFiles(file.family, file.phase)).filter((p) => p.name === file.name);
+    const saved = { ...file, version: same.reduce((n, p) => Math.max(n, p.version), 0) + 1 };
+    await this.writeJson('phases', phaseFileName(saved), saved);
+    return saved;
+  }
+
   // Saved colour sets for one board. Saving under an existing name replaces it.
   async palettes(family) {
     return (await this.jsonFiles('palettes')).map((f) => f.data).filter((p) => isPalette(p) && (!family || p.family === family));
@@ -225,7 +242,7 @@ export async function resolveRoutine(library, routine, engineDefaults) {
   for (const [phase, ref] of Object.entries(routine.phases || {})) {
     if (!ref) continue;
     const [name, version] = String(ref).split('@');
-    const matches = phases.filter((p) => p.data.name === name && p.data.phase === phase);
+    const matches = phases.filter((p) => p.data.name === name && p.data.phase === phase && (!p.data.family || !routine.family || p.data.family === routine.family));
     const pick = version ? matches.find((p) => String(p.data.version) === version) : matches.sort((a, b) => (b.data.version || 0) - (a.data.version || 0))[0];
     if (!pick) throw new Error(`Routine ${routine.name}: phase file ${ref} (${phase}) isn't in the library.`);
     Object.assign(settings, pick.data.settings);
