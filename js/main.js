@@ -575,7 +575,7 @@ window.addEventListener('beforeunload', (e) => {
 
 // ---------------------------------------------------------------- start
 async function start() {
-  initRoutinesTab({ $, el });
+  initRoutinesTab({ $, el, state });
   flashTab = initFlashTab({ $, el, log, state, setLibrary, refreshLibrary });
   if (!webSerialSupported()) $('fsConnect').disabled = true;
   if (!webSerialSupported()) {

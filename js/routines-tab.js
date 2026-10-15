@@ -4,6 +4,7 @@
 
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
+import { makePalette, applyPalette } from './palettes.js';
 
 const CORE_FIELDS = [
   ['BRIGHTNESS', 'Overall brightness (0–255)', 1, 255],
@@ -38,7 +39,7 @@ const css = (c) => `rgb(${toScreen(c[0])},${toScreen(c[1])},${toScreen(c[2])})`;
 const toHex = (c) => '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
 const fromHex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 
-export function initRoutinesTab({ $, el }) {
+export function initRoutinesTab({ $, el, state }) {
   let family = 'core';
   const S = { core: structuredClone(core.DEFAULTS), pulse: { ...pulse.DEFAULTS } };
   let t = 0, playing = true, speed = 1, last = null, pulseRun = null, pulseDirty = true, pulseStage1 = null;
@@ -137,6 +138,21 @@ export function initRoutinesTab({ $, el }) {
     $('rtScrub').value = String(Math.round((t / len) * 1000));
   }
 
+  // ---- saved colour sets (library palettes/ folder)
+  async function loadPalettes(pick) {
+    const lib = state.library;
+    const sel = $('rtPalSel');
+    sel.replaceChildren(el('option', { value: '', text: lib ? 'Choose a colour set' : 'No library folder' }));
+    $('rtPalSave').disabled = !lib;
+    if (!lib) { sel.disabled = true; $('rtPalUse').disabled = true; return; }
+    const sets = await lib.palettes(family);
+    sets.forEach((p) => sel.append(el('option', { value: p.name, text: p.name })));
+    sel.disabled = $('rtPalUse').disabled = !sets.length;
+    sel._sets = sets;
+    if (pick) sel.value = pick;
+  }
+  function palMsg(text) { $('rtPalMsg').textContent = text; }
+
   function changed() { pulseDirty = true; note(); drawStrip(); draw(); }
 
   function setFamily(f) {
@@ -147,7 +163,7 @@ export function initRoutinesTab({ $, el }) {
     buildBoard(); buildFields();
     pulseDirty = true;
     if (f === 'pulse' && !pulseStage1) frameAt(0);
-    note(); drawStrip(); draw();
+    note(); drawStrip(); draw(); loadPalettes().catch(() => {});
   }
 
   function tick(now) {
@@ -169,9 +185,25 @@ export function initRoutinesTab({ $, el }) {
     S[family] = family === 'core' ? structuredClone(core.DEFAULTS) : { ...pulse.DEFAULTS };
     buildFields(); changed();
   });
+  $('rtPalUse').addEventListener('click', () => {
+    const p = ($('rtPalSel')._sets || []).find((x) => x.name === $('rtPalSel').value);
+    if (!p) return palMsg('Choose a colour set first.');
+    S[family] = applyPalette(family, S[family], p);
+    buildFields(); changed();
+    palMsg(`Using "${p.name}".`);
+  });
+  $('rtPalSave').addEventListener('click', async () => {
+    try {
+      const p = makePalette(family, $('rtPalName').value, S[family]);
+      await state.library.savePalette(p);
+      $('rtPalName').value = '';
+      await loadPalettes(p.name);
+      palMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
+    } catch (e) { palMsg(e.message); }
+  });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); }); // the strip can't be sized while hidden
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadPalettes().catch(() => {}); }); // the strip can't be sized while hidden
   window.addEventListener('resize', () => { if (!$('p-routines').hidden) drawStrip(); });
   setFamily('core');
   requestAnimationFrame(tick);
