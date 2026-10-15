@@ -240,8 +240,10 @@ export class Library {
     return (await this.profiles(family)).find((p) => p.name.toLowerCase() === code) || defaultProfile(family);
   }
 
+  // Drives saved before 15 Oct 2026 have the family as a letter ('P', 'C'); read them as 'pulse', 'core'.
   async drives() {
-    return (await this.jsonFiles('drives')).map((d) => d.data).filter((d) => d && d.drive);
+    return (await this.jsonFiles('drives')).map((d) => d.data).filter((d) => d && d.drive)
+      .map((d) => ({ ...d, family: driveFamily(d.family) }));
   }
 
   async saveDrive(record) {
@@ -254,10 +256,13 @@ export class Library {
   }
 
   async nextNumber(family) {
-    const used = (await this.drives()).filter((d) => d.family === family).map((d) => d.number);
+    const used = (await this.drives()).filter((d) => d.family === driveFamily(family)).map((d) => d.number);
     return used.length ? Math.max(...used) + 1 : 1;
   }
 }
+
+const LETTER_FAMILY = { P: 'pulse', C: 'core' };
+export const driveFamily = (f) => LETTER_FAMILY[f] || f;
 
 // A routine names one phase file per phase; each phase file holds settings for that phase.
 // Resolved over the engine's defaults, so a missing phase keeps the engine's own look.
