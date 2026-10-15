@@ -49,17 +49,34 @@ export function initRoutinesTab({ $, el, state }) {
 
   const lensEls = [];
 
+  // One side of the drive, front view. The two sides carry the same pattern, so only one LED of
+  // each pair is drawn. y is mm above the top of the USB A connector, x is mm from the centre line.
+  // `led` is the LED number (1-based) shown for that spot: change it here if the front is the other side.
+  const LED_SPOTS = {
+    core: [{ led: 1, x: -3.5, y: 6.5 }, { led: 2, x: 3.5, y: 6.5 }, { led: 3, x: 0, y: 46.5 }],
+    pulse: [{ led: 1, x: -3.5, y: 6.5 }, { led: 2, x: 3.5, y: 6.5 }, { led: 3, x: 0, y: 41.5 }, { led: 5, x: 0, y: 54.5 }],
+  };
+  const MM = 4.5, PLUG_H = 14, PLUG_W = 12, BOARD_W = 16, TOP_PAD = 8; // px per mm, mm
+
   function buildBoard() {
-    const names = family === 'core' ? CORE_LEDS : PULSE_LEDS;
+    const spots = LED_SPOTS[family];
+    const topY = Math.max(...spots.map((q) => q.y)) + TOP_PAD;
     const board = $('rtBoard');
     board.replaceChildren();
-    board.dataset.count = names.length;
+    board.style.height = `${(topY + PLUG_H) * MM}px`;
     lensEls.length = 0;
-    names.forEach((n) => {
+    const pcb = el('div', { class: 'rt-pcb' });
+    pcb.style.cssText = `width:${BOARD_W * MM}px;height:${topY * MM}px;top:0`;
+    const plug = el('div', { class: 'rt-plug' });
+    plug.style.cssText = `width:${PLUG_W * MM}px;height:${PLUG_H * MM}px;top:${topY * MM}px`;
+    board.append(pcb, plug);
+    for (const q of spots) {
       const lens = el('div', { class: 'rt-lens' });
-      lensEls.push(lens);
-      board.append(el('div', { class: 'rt-led' }, lens, el('span', { text: n })));
-    });
+      lens.style.cssText = `left:calc(50% + ${q.x * MM}px);top:${(topY - q.y) * MM}px`;
+      lens.title = `LED ${q.led}`;
+      lensEls[q.led - 1] = lens;
+      board.append(lens);
+    }
   }
 
   function buildFields() {
@@ -119,14 +136,14 @@ export function initRoutinesTab({ $, el, state }) {
     cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d');
     const len = length();
-    const rows = family === 'core' ? [0, 2] : [0, 2, 4]; // outer / inner, or bottom / middle / top
+    const rows = family === 'core' ? [2, 0] : [4, 2, 0]; // top of the drive first
     const rh = h / rows.length;
     if (family === 'pulse' && pulseDirty) frameAt(0);
     for (let x = 0; x < w; x++) {
       const px = frameAt(Math.floor((x / w) * len));
       rows.forEach((led, r) => { ctx.fillStyle = css(px[led]); ctx.fillRect(x, r * rh, 1, Math.ceil(rh)); });
     }
-    $('rtRows').textContent = family === 'core' ? 'Top row LEDs 1, 2, 5, 6 · bottom row LEDs 3, 4' : 'Rows from top: bottom, middle and top sections of the drive';
+    $('rtRows').textContent = family === 'core' ? 'Timeline rows, top of the drive first: the upper LED, then the lower pair.' : 'Timeline rows, top of the drive first: top, middle, then the bottom pair.';
   }
 
   function draw() {
@@ -134,6 +151,7 @@ export function initRoutinesTab({ $, el, state }) {
     if (t > len) t = 0;
     const px = frameAt(t);
     px.forEach((c, i) => {
+      if (!lensEls[i]) return;
       lensEls[i].style.background = Math.max(...c) === 0 ? '' : css(c);
       lensEls[i].style.boxShadow = Math.max(...c) === 0 ? '' : `0 0 ${8 + 18 * Math.max(...c) / 255}px ${css(c)}`;
     });

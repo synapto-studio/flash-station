@@ -227,11 +227,10 @@ details.small > *:not(summary) { margin-top: 10px; }
 
 /* routines preview */
 .rt-stage { background: #121010; border: 1px solid var(--edge); border-radius: 12px; padding: 24px 16px 12px; margin: 16px 0; }
-.rt-board { display: grid; grid-template-columns: repeat(var(--n, 6), minmax(0, 1fr)); gap: 8px; }
-.rt-board[data-count='6'] { --n: 6; }
-.rt-board[data-count='8'] { --n: 8; }
-.rt-led { display: grid; justify-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
-.rt-lens { width: clamp(26px, 7vw, 54px); aspect-ratio: 1; border-radius: 50%; background: #2a2624; border: 2px solid #d9d4cc33; }
+.rt-board { position: relative; width: 100%; margin: 0 auto; }
+.rt-pcb { position: absolute; left: 50%; transform: translateX(-50%); background: #1d1a18; border: 1px solid var(--edge); border-radius: 6px 6px 0 0; }
+.rt-plug { position: absolute; left: 50%; transform: translateX(-50%); background: #8c857e; border-radius: 0 0 2px 2px; }
+.rt-lens { position: absolute; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 50%; background: #2a2624; border: 2px solid #d9d4cc33; }
 .rt-clock { text-align: right; font: 20px ui-monospace, Menlo, monospace; color: var(--paper); margin-top: 8px; }
 .rt-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
 .rt-controls select { background: var(--shell-2); color: var(--paper); border: 1px solid var(--edge); border-radius: 6px; padding: 6px; }
