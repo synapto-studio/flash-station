@@ -3,7 +3,7 @@
 import { webSerialSupported, WebSerialTransport } from './serial.js';
 import { SimChip, SimTransport } from './sim.js';
 import { DriveArt } from './drive-art.js';
-import { FAMILIES, checkBoard, initialiseBoard, explain, driveRecord } from './initialise.js';
+import { FAMILIES, checkBoard, initialiseBoard, wipeBoard, wipeRecord, explain, driveRecord } from './initialise.js';
 import { buildInitImage, initImageToMem } from './engines.js';
 import { toHex } from './intelhex.js';
 import { encodeCard, driveLabel } from './idcard.js';
@@ -535,6 +535,67 @@ $('fallbackBtn').addEventListener('click', async () => {
   }
 });
 
+// ---------------------------------------------------------------- wipe
+function wipeName() {
+  const c = state.checked;
+  return c && c.card ? c.card.label : 'this board';
+}
+
+function askWipe(open) {
+  $('wipeAsk').hidden = open;
+  $('wipeConfirm').hidden = !open;
+  $('wipeCard').disabled = open || state.busy;
+  if (open) {
+    const clear = $('wipeCard').checked;
+    $('wipeWarn').textContent = `Wipe ${wipeName()}? Its engine and lighting are erased${clear ? ' and its ID card is cleared, so it loses its number' : '. The ID card stays'}. This can't be undone.`;
+    $('wipeWarn').hidden = false;
+  } else $('wipeWarn').hidden = true;
+}
+
+$('wipeBtn').addEventListener('click', () => askWipe(true));
+$('wipeNo').addEventListener('click', () => askWipe(false));
+$('wipeYes').addEventListener('click', async () => {
+  const checked = state.checked;
+  const clearCard = $('wipeCard').checked;
+  const name = wipeName();
+  askWipe(false);
+  setBusy(true);
+  log(`Wiping ${name}${clearCard ? ' and its ID card' : ''}`);
+  const names = { erase: 'Erasing', card: 'Clearing the ID card', verify: 'Checking it\'s blank' };
+  const weight = { erase: [0, 0.05], card: [0.05, 0.03], verify: [0.08, 0.92] };
+  try {
+    const res = await wipeBoard(state.transport, {
+      family: state.family, clearCard, expectSerial: checked.info.serial, baud: baud(), log,
+      onStep: (s, f) => {
+        if (s === 'done') return;
+        const [a, w] = weight[s];
+        stage(names[s], s === 'verify' ? 'Reading every byte back.' : name, a + w * f);
+      },
+    });
+    art.off();
+    stage('Board wiped', res.card ? `Blank, and still carries ID card ${res.card.label}.` : 'Blank, with no ID card.', 1);
+    log(`Wiped and checked blank${clearCard ? ', ID card cleared' : ''}`);
+    if (state.library) {
+      const existing = await state.library.findDrive({ chipSerial: checked.info.serial });
+      if (existing) {
+        await state.library.saveDrive(wipeRecord(existing, { cardCleared: clearCard }));
+        await refreshLibrary();
+      }
+    }
+    $('wipeCard').checked = false;
+    state.checked = null;
+    $('facts').hidden = true;
+    $('driveNum').dataset.cardNumber = '';
+  } catch (e) {
+    art.fault();
+    stage('Wipe failed', explain(e, state.family));
+    log(`Wipe failed: ${e.message}`);
+  } finally {
+    setBusy(false);
+    refreshSteps();
+  }
+});
+
 // ---------------------------------------------------------------- step states and busy
 function refreshSteps() {
   const t = state.transport;
@@ -554,13 +615,16 @@ function refreshSteps() {
   $('initBtn').disabled = state.busy || !ready;
   $('initBtn').textContent = d.ok ? `Initialise ${d.label}` : 'Initialise';
   $('fallbackBtn').disabled = state.busy || !engineOk || !d.ok;
+  $('wipeBtn').disabled = state.busy || !t || !checked;
+  $('wipeYes').disabled = state.busy || !t || !checked;
+  if (!checked && !$('wipeConfirm').hidden) askWipe(false);
   $('goNote').textContent = !t ? 'Choose the programmer first.' : !checked ? 'Check the board first. Each board is checked before it is written.'
     : !engineOk ? 'Choose an engine with a bootloader.' : 'Erases the chip, writes the engine with its lighting, sets the BOOTEND fuse, then writes the ID card. Everything is read back to check it.';
 }
 
 function setBusy(b) {
   state.busy = b;
-  for (const id of ['connectBtn', 'simBtn', 'baud', 'engineSel', 'routineSel', 'driveNum', 'boardSel', 'casing', 'pickLibBtn', 'addEngineBtn']) $(id).disabled = b;
+  for (const id of ['connectBtn', 'simBtn', 'baud', 'engineSel', 'routineSel', 'driveNum', 'boardSel', 'casing', 'pickLibBtn', 'addEngineBtn', 'wipeCard']) $(id).disabled = b;
   for (const btn of document.querySelectorAll('.choice:not(.rt-choice) button')) btn.disabled = b;
   if (!b) refreshEngineOptions();
   refreshSteps();

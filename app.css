@@ -132,6 +132,10 @@ main { padding: 32px 24px 80px; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn.quiet { background: none; border-color: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; padding-left: 6px; padding-right: 6px; }
 .btn.quiet:hover:not(:disabled) { color: var(--paper); }
+.btn.danger { border-color: var(--fault); color: var(--fault); }
+.btn.danger:hover:not(:disabled) { border-color: var(--fault); background: color-mix(in srgb, var(--fault) 12%, transparent); }
+label.tick { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+label.tick input { accent-color: var(--resin); width: 18px; height: 18px; margin: 0; }
 .btn.primary { background: var(--resin); color: var(--resin-ink); border-color: var(--resin); font: 700 22px/1 var(--cond); letter-spacing: 0.02em; padding: 16px 28px; margin-bottom: 12px; }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.06); border-color: var(--resin); }
 

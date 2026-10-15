@@ -125,6 +125,17 @@
               <div class="row"><button type="button" class="btn quiet" id="fallbackBtn" disabled>Download the .hex for this board</button></div>
               <pre class="cmd" id="fallbackCmd" hidden></pre>
             </details>
+            <details class="small" id="wipe">
+              <summary>Wipe board</summary>
+              <p>Erases the engine and its lighting so the chip is blank, then reads it back to check. The ID card stays unless you tick the box. Check the board first.</p>
+              <label class="tick"><input type="checkbox" id="wipeCard"> Also clear the ID card (the drive loses its number)</label>
+              <div class="row" id="wipeAsk"><button type="button" class="btn" id="wipeBtn" disabled>Wipe board</button></div>
+              <p class="note warn" id="wipeWarn" hidden></p>
+              <div class="row" id="wipeConfirm" hidden>
+                <button type="button" class="btn danger" id="wipeYes">Yes, wipe it</button>
+                <button type="button" class="btn quiet" id="wipeNo">Cancel</button>
+              </div>
+            </details>
           </li>
         </ol>
       </div>

@@ -190,6 +190,53 @@ export async function initialiseBoard(transport, { family, image, card, expectSe
   }
 }
 
+// Back to a blank chip: erase flash (and EEPROM), optionally blank the ID card, then read it all
+// back to check. Fuses are left as they are (Initialise sets BOOTEND again anyway).
+// steps reported through onStep(name, fraction): erase, card, verify, done
+export async function wipeBoard(transport, { family, clearCard = false, expectSerial = null, baud, log, onStep = () => {} }) {
+  const p = new UpdiProgrammer(transport, { baud, log });
+  try {
+    await p.connect();
+    const info = await p.identify();
+    checkFamily(info, family);
+    if (expectSerial && info.serial !== expectSerial) {
+      throw new StationError('other-board', 'A different board is on the pins from the one you checked. Check it again first.');
+    }
+
+    onStep('erase', 0);
+    await p.chipErase();
+    if (clearCard) {
+      onStep('card', 0);
+      await p.writeUserRow(new Uint8Array(32).fill(0xff));
+    }
+
+    onStep('verify', 0);
+    const back = await p.readFlash(0, info.device.flashSize, (d, n) => onStep('verify', d / n));
+    const bad = back.findIndex((b) => b !== 0xff);
+    if (bad >= 0) throw new StationError('verify', `The chip isn't blank at flash address 0x${bad.toString(16)}. Wipe it again, and if it repeats, lower the speed.`);
+    const row = await p.readUserRow();
+    if (clearCard && row.some((b) => b !== 0xff)) throw new StationError('verify', "The ID card didn't clear. Wipe it again.");
+    onStep('done', 1);
+    return { info, card: decodeCard(row) };
+  } finally {
+    await p.disconnect();
+  }
+}
+
+// A wipe goes in the drive's history; the record stays so the number isn't reused by mistake.
+export function wipeRecord(existing, { cardCleared }) {
+  const now = new Date().toISOString();
+  return {
+    ...existing,
+    updated: now,
+    history: [...(existing.history || []), {
+      date: now,
+      station: 'Initialisation Station',
+      action: cardCleared ? 'Wiped, ID card cleared' : 'Wiped',
+    }],
+  };
+}
+
 export function driveRecord({ existing, label, family, number, board, casing, info, engine, routineName, image, settings }) {
   const now = new Date().toISOString();
   const event = {

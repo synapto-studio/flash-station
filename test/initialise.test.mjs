@@ -4,7 +4,7 @@ import { SimChip, SimTransport } from '../js/sim.js';
 import { demoEngines } from '../js/demo.js';
 import { buildInitImage } from '../js/engines.js';
 import { encodeCard, decodeCard } from '../js/idcard.js';
-import { checkBoard, initialiseBoard, driveRecord, explain } from '../js/initialise.js';
+import { checkBoard, initialiseBoard, wipeBoard, wipeRecord, driveRecord, explain } from '../js/initialise.js';
 import { Library, MemoryStore, resolveRoutine } from '../js/library.js';
 
 const [CORE, PULSE] = demoEngines();
@@ -34,6 +34,74 @@ for (const [family, device, engine, bootend] of [['core', 'attiny412', CORE, 0x0
     assert.equal(second.card.label, family === 'core' ? 'C-0003' : 'P-0003');
   });
 }
+
+for (const [family, device, engine, letter, board] of [['core', 'attiny412', CORE, 'C', 'Core A'], ['pulse', 'attiny1614', PULSE, 'P', 'Pulse A2']]) {
+  test(`${family}: wipe an initialised board, keeping the ID card`, async () => {
+    const chip = new SimChip(device);
+    const t = new SimTransport(chip);
+    const card = encodeCard({ family: letter, number: 7, board });
+    await initialiseBoard(t, { family, image: buildInitImage(engine), card, engine });
+    chip.eeprom.fill(0x12);
+    const before = await checkBoard(t, family, { engines: [CORE, PULSE] });
+    assert.equal(before.onChip.blank, false);
+
+    const steps = [];
+    const res = await wipeBoard(t, { family, expectSerial: before.info.serial, onStep: (s) => steps.includes(s) || steps.push(s) });
+    assert.deepEqual(steps, ['erase', 'verify', 'done']);
+    assert.ok(chip.flash.every((b) => b === 0xff), 'flash blank');
+    assert.ok(chip.eeprom.every((b) => b === 0xff), 'EEPROM blank');
+    assert.deepEqual(chip.userRow, card, 'ID card kept');
+    assert.equal(res.card.number, 7);
+    assert.equal(chip.nvmProg, false, 'chip left running');
+
+    const after = await checkBoard(t, family, { engines: [CORE, PULSE] });
+    assert.equal(after.onChip.blank, true);
+    assert.equal(after.card.number, 7);
+  });
+
+  test(`${family}: wipe with the ID card cleared`, async () => {
+    const chip = new SimChip(device);
+    const t = new SimTransport(chip);
+    await initialiseBoard(t, { family, image: buildInitImage(engine), card: encodeCard({ family: letter, number: 7, board }), engine });
+    const steps = [];
+    const res = await wipeBoard(t, { family, clearCard: true, onStep: (s) => steps.includes(s) || steps.push(s) });
+    assert.deepEqual(steps, ['erase', 'card', 'verify', 'done']);
+    assert.equal(res.card, null);
+    assert.ok(chip.userRow.every((b) => b === 0xff), 'user row blank');
+    const after = await checkBoard(t, family);
+    assert.equal(after.onChip.blank, true);
+    assert.equal(after.card, null);
+  });
+}
+
+test('wipe: wrong board or a swapped board is refused and nothing is erased', async () => {
+  const chip = new SimChip('attiny412');
+  const t = new SimTransport(chip);
+  await initialiseBoard(t, { family: 'core', image: buildInitImage(CORE), card: encodeCard({ family: 'C', number: 1, board: 'Core A' }), engine: CORE });
+  await assert.rejects(wipeBoard(t, { family: 'pulse' }), (e) => e.code === 'wrong-board');
+  await assert.rejects(wipeBoard(t, { family: 'core', expectSerial: 'NOT-THIS-ONE' }), (e) => e.code === 'other-board');
+  assert.equal(chip.stats.chipErases, 1, 'only the erase from initialising');
+});
+
+test('wipe: a flash byte that will not erase is caught by the blank check', async () => {
+  const chip = new SimChip('attiny412');
+  const t = new SimTransport(chip);
+  const erase = chip.chipErase.bind(chip);
+  chip.chipErase = () => {
+    erase();
+    chip.flash[0x123] = 0x00;
+  };
+  await assert.rejects(wipeBoard(t, { family: 'core' }), (e) => e.code === 'verify' && /0x123/.test(e.message));
+});
+
+test('wipe: noted in the drive history', () => {
+  const rec = { drive: 'P-0002', engine: { label: 'pulsetest 1.0' }, history: [{ action: 'Initialised' }] };
+  const out = wipeRecord(rec, { cardCleared: true });
+  assert.equal(out.history.length, 2);
+  assert.equal(out.history[1].action, 'Wiped, ID card cleared');
+  assert.equal(out.drive, 'P-0002');
+  assert.equal(rec.history.length, 1, 'original untouched');
+});
 
 test('re-initialising a Pulse board that had Beat-style BOOTEND 0 sets it to 0x0C, and back', async () => {
   const chip = new SimChip('attiny1614');
