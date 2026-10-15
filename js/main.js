@@ -10,6 +10,7 @@ import { encodeCard, driveLabel } from './idcard.js';
 import { Library, MemoryStore, rememberedFolder, reconnectFolder, pickFolder, folderAccessSupported, resolveRoutine } from './library.js';
 import { demoEngines } from './demo.js';
 import { initFlashTab } from './flash-tab.js';
+import { initRoutinesTab } from './routines-tab.js';
 
 const $ = (id) => document.getElementById(id);
 const CHIP_KEY = { core: 'attiny412', pulse: 'attiny1614' };
@@ -60,7 +61,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // ---------------------------------------------------------------- tabs
-const TABS = ['init', 'station', 'drives', 'library'];
+const TABS = ['init', 'station', 'drives', 'routines', 'library'];
 function showTab(name) {
   for (const t of TABS) {
     $(`t-${t}`).setAttribute('aria-selected', String(t === name));
@@ -277,7 +278,7 @@ function setFamily(f) {
   if (state.busy || f === state.family) return;
   state.family = f;
   state.checked = null;
-  for (const b of document.querySelectorAll('.choice button')) b.setAttribute('aria-checked', String(b.dataset.family === f));
+  for (const b of document.querySelectorAll('.choice:not(.rt-choice) button')) b.setAttribute('aria-checked', String(b.dataset.family === f));
   if (simulated()) useSimulator();
   applyFamily();
   stage('Ready', 'Check the board on the jig.');
@@ -306,7 +307,7 @@ function applyFamily() {
   refreshSteps();
 }
 
-for (const b of document.querySelectorAll('.choice button')) b.addEventListener('click', () => setFamily(b.dataset.family));
+for (const b of document.querySelectorAll('.choice:not(.rt-choice) button')) b.addEventListener('click', () => setFamily(b.dataset.family));
 
 // ---------------------------------------------------------------- programmer
 function useSimulator() {
@@ -560,7 +561,7 @@ function refreshSteps() {
 function setBusy(b) {
   state.busy = b;
   for (const id of ['connectBtn', 'simBtn', 'baud', 'engineSel', 'routineSel', 'driveNum', 'boardSel', 'casing', 'pickLibBtn', 'addEngineBtn']) $(id).disabled = b;
-  for (const btn of document.querySelectorAll('.choice button')) btn.disabled = b;
+  for (const btn of document.querySelectorAll('.choice:not(.rt-choice) button')) btn.disabled = b;
   if (!b) refreshEngineOptions();
   refreshSteps();
 }
@@ -574,6 +575,7 @@ window.addEventListener('beforeunload', (e) => {
 
 // ---------------------------------------------------------------- start
 async function start() {
+  initRoutinesTab({ $, el });
   flashTab = initFlashTab({ $, el, log, state, setLibrary, refreshLibrary });
   if (!webSerialSupported()) $('fsConnect').disabled = true;
   if (!webSerialSupported()) {
