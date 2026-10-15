@@ -224,3 +224,43 @@ details.small > *:not(summary) { margin-top: 10px; }
 .fs-meter span { transition: width 0.1s linear; }
 .fs .inline { white-space: nowrap; }
 .fs input[type='color'] { width: 44px; height: 34px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }
+
+/* ---------------------------------------------------------------- Preview tab */
+.pvboard { margin-bottom: 8px; }
+.pvstage { background: radial-gradient(120% 140% at 50% 0%, #1b1817, #121010 70%); border: 1px solid var(--edge); border-radius: 14px; padding: 24px 16px 14px; margin: 12px 0 16px; display: grid; gap: 18px; }
+.pvleds.core { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.pvleds.pulse { display: grid; gap: 14px; justify-items: center; }
+.pvsec { display: grid; gap: 6px; justify-items: center; }
+.pvsecname { font: 600 12px var(--sans); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.pvrow { display: grid; grid-template-columns: repeat(2, 70px); gap: 12px; justify-content: center; }
+.pvled { display: grid; justify-items: center; gap: 8px; min-width: 0; }
+.pvpkg { position: relative; isolation: isolate; width: clamp(38px, 9vw, 60px); aspect-ratio: 1; background: #d9d4cc; border-radius: 6px; box-shadow: inset 0 0 0 2px rgba(0,0,0,.25); }
+.pvlens { position: absolute; inset: 16%; border-radius: 50%; background: #2a2624; }
+.pvglow { position: absolute; inset: -45%; border-radius: 50%; opacity: 0; filter: blur(14px); z-index: -1; pointer-events: none; }
+.pvname { font: 600 13px var(--cond); letter-spacing: .04em; color: var(--paper); }
+.pvplug { width: 90px; text-align: center; padding: 4px; border-radius: 4px; background: #5a534d; color: var(--paper); font: 500 12px var(--sans); }
+.pvfoot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--edge); padding-top: 12px; }
+.pvphase { color: var(--paper); font-size: 14px; }
+.pvclock { font: 500 22px ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.pvtracks { display: grid; gap: 8px; touch-action: none; cursor: ew-resize; user-select: none; }
+.pvtrack { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; align-items: center; }
+.pvtname { font-size: 13px; color: var(--muted); }
+.pvstrip { position: relative; height: 32px; border-radius: 6px; overflow: hidden; background: #121010; border: 1px solid var(--edge); }
+.pvstrip canvas { width: 100%; height: 100%; display: block; }
+.pvph { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); pointer-events: none; }
+.pvticks { position: relative; height: 18px; margin-top: 6px; margin-left: 122px; font: 11px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); }
+.pvticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.pvbeat { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; margin: 8px 0 16px; }
+.pvchips span { display: inline-block; padding: 3px 10px; margin-right: 6px; border: 1px solid var(--edge); border-radius: 999px; color: var(--muted); font-size: 13px; }
+.pvchips span.on { border-color: var(--resin); color: var(--resin); }
+.pvtune { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 22px; margin: 12px 0; }
+.pvfield { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 14px; }
+.pvfield small { color: var(--muted); }
+.pvfield input[type='number'] { width: 96px; text-align: right; background: var(--shell-2); color: var(--paper); border: 1px solid var(--edge); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.pvfield input[type='color'] { width: 44px; height: 30px; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: none; }
+.pvfield.changed span:first-child { color: var(--resin); }
+.pvonly[hidden] { display: none; }
+@media (max-width: 560px) {
+  .pvtrack { grid-template-columns: 1fr; gap: 3px; }
+  .pvticks { margin-left: 0; }
+}

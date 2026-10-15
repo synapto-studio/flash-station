@@ -23,6 +23,7 @@
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" id="t-init" aria-controls="p-init" aria-selected="true">Initialise</button>
       <button role="tab" id="t-station" aria-controls="p-station" aria-selected="false">Flash Station</button>
+      <button role="tab" id="t-preview" aria-controls="p-preview" aria-selected="false">Preview</button>
       <button role="tab" id="t-drives" aria-controls="p-drives" aria-selected="false">Drives</button>
       <button role="tab" id="t-library" aria-controls="p-library" aria-selected="false">Library</button>
     </nav>
@@ -177,6 +178,62 @@
           <tbody></tbody>
         </table></div>
         <p class="note" id="fsHistoryNote"></p>
+      </div>
+    </section>
+
+    <!-- ============================== Preview ============================== -->
+    <section class="panel" id="p-preview" role="tabpanel" aria-labelledby="t-preview" hidden>
+      <div class="wide pv">
+        <h1>Preview</h1>
+        <p class="lead">See what a drive's lighting does from the moment USB power arrives, before sending anything. It runs the same integer maths as the firmware. Screen colours are only a guide: judge yellow and orange on a real drive.</p>
+        <div class="row">
+          <div class="choice pvboard" role="radiogroup" aria-label="Board">
+            <button type="button" role="radio" data-pv="core" aria-checked="true"><strong>Core</strong><span>coretest · 6 LEDs</span></button>
+            <button type="button" role="radio" data-pv="pulse" aria-checked="false"><strong>Pulse</strong><span>pulsetest · 8 LEDs and a mic</span></button>
+          </div>
+        </div>
+
+        <div class="pvstage" id="pvStage">
+          <div class="pvleds" id="pvLeds"></div>
+          <div class="pvfoot">
+            <div class="pvphase" id="pvPhase"></div>
+            <div class="pvclock" id="pvClock">0.00 s</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <button type="button" class="btn primary" id="pvPower">Plug in again</button>
+          <button type="button" class="btn" id="pvPlay">Pause</button>
+          <label class="inline">Speed
+            <select id="pvSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+          </label>
+          <span class="pvonly pulse">
+            <label class="inline">Music
+              <select id="pvMusic"><option value="demo">Drum and bass demo, 174 BPM</option><option value="none">No music</option></select>
+            </label>
+            <label class="inline">Room
+              <select id="pvRoom"><option value="home">Home, 80 dB</option><option value="bar">Bar, 88 dB</option><option value="club" selected>Club, 97 dB</option><option value="rig">By the rig, 104 dB</option></select>
+            </label>
+          </span>
+        </div>
+        <p class="note" id="pvStatus" role="status"></p>
+
+        <div class="pvtracks" id="pvTracks" aria-label="Timeline: click or drag to jump"></div>
+        <div class="pvticks" id="pvTicks"></div>
+        <p class="note" id="pvLegend"></p>
+
+        <div class="pvonly pulse pvbeat">
+          <div><span class="label">Tempo</span> <b id="pvBpm">–</b> <span id="pvLock" class="note"></span></div>
+          <div><span class="label">Room level</span> <b id="pvLevel">–</b></div>
+          <div class="pvchips"><span id="pvChipTop">Top</span><span id="pvChipMid">Middle</span><span id="pvChipBot">Bottom</span></div>
+        </div>
+
+        <details class="small" open>
+          <summary>Tune it</summary>
+          <p class="note">Changes play back straight away. This only changes the preview; to put settings on a drive, use the Flash Station tab.</p>
+          <div class="pvtune" id="pvTune"></div>
+          <div class="row"><button type="button" class="btn quiet" id="pvReset">Back to the defaults</button></div>
+        </details>
       </div>
     </section>
 

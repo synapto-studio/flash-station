@@ -10,6 +10,7 @@ import { encodeCard, driveLabel } from './idcard.js';
 import { Library, MemoryStore, rememberedFolder, reconnectFolder, pickFolder, folderAccessSupported, resolveRoutine } from './library.js';
 import { demoEngines } from './demo.js';
 import { initFlashTab } from './flash-tab.js';
+import { initPreviewTab } from './preview-tab.js';
 
 const $ = (id) => document.getElementById(id);
 const CHIP_KEY = { core: 'attiny412', pulse: 'attiny1614' };
@@ -60,7 +61,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // ---------------------------------------------------------------- tabs
-const TABS = ['init', 'station', 'drives', 'library'];
+const TABS = ['init', 'station', 'preview', 'drives', 'library'];
 function showTab(name) {
   for (const t of TABS) {
     $(`t-${t}`).setAttribute('aria-selected', String(t === name));
@@ -306,7 +307,7 @@ function applyFamily() {
   refreshSteps();
 }
 
-for (const b of document.querySelectorAll('.choice button')) b.addEventListener('click', () => setFamily(b.dataset.family));
+for (const b of document.querySelectorAll('.choice button[data-family]')) b.addEventListener('click', () => setFamily(b.dataset.family));
 
 // ---------------------------------------------------------------- programmer
 function useSimulator() {
@@ -574,6 +575,7 @@ window.addEventListener('beforeunload', (e) => {
 
 // ---------------------------------------------------------------- start
 async function start() {
+  initPreviewTab({ $ });
   flashTab = initFlashTab({ $, el, log, state, setLibrary, refreshLibrary });
   if (!webSerialSupported()) $('fsConnect').disabled = true;
   if (!webSerialSupported()) {
