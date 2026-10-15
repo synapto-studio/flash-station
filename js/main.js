@@ -292,6 +292,7 @@ function applyFamily() {
   $('switchWhy').textContent = state.family === 'pulse'
     ? "before the pogo pin touches the board. Never 5V on Pulse: its UPDI pad feeds the mic's 3.3 V rail."
     : 'before the pogo pin touches the board. Core\'s UPDI pad sits at 5 V when it\'s on USB power.';
+  $('boardChecks').textContent = F.checks.length ? ` Check first: ${F.checks.join(' ')}` : '';
   for (const s of document.querySelectorAll('.switch-track span')) s.classList.toggle('on', s.dataset.v === F.switchV);
   $('driveLetter').textContent = `${F.letter}-`;
   const bs = $('boardSel');

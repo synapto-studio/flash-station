@@ -14,7 +14,7 @@ export const FAMILIES = {
     letter: 'C',
     leds: 6,
     boards: ['Core A'],
-    checks: [],
+    checks: ['The 470 Ω on the UPDI line is bridged, or the pogo pin is on the chip side of it.'],
     engineKinds: ['coretest'],
   },
   pulse: {
@@ -24,7 +24,7 @@ export const FAMILIES = {
     letter: 'P',
     leds: 8,
     boards: ['Pulse A2', 'Pulse A1'],
-    checks: ['6R1 is bridged', 'The 15k / 10k divider is fitted (pin 4 reads about 2.0 V on USB power). Needed for the Flash Station, not for initialising.'],
+    checks: ['6R1 is bridged.', 'The 15k / 10k divider is fitted (pin 4 reads about 2.0 V on USB power). Needed for the Flash Station, not for initialising.'],
     engineKinds: ['pulsetest', 'beat'],
   },
 };
@@ -38,7 +38,7 @@ export function explain(e, family) {
     case 'no-echo':
       return "The UPDI Friend isn't answering. Check its USB cable, and that you picked its port when connecting.";
     case 'no-chip':
-      return `No chip answered. Check the pogo pin sits on the UPDI pad, the board has power from its USB plug, and the UPDI Friend switch is on ${f ? f.switchV : 'the right voltage'}.${family === 'pulse' ? ' On Pulse, 6R1 must be bridged.' : ''}`;
+      return `No chip answered. Check the pogo pin sits on the UPDI pad, the board has power from its USB plug, and the UPDI Friend switch is on ${f ? f.switchV : 'the right voltage'}.${family === 'pulse' ? ' On Pulse, 6R1 must be bridged.' : family === 'core' ? ' On Core, the 470 Ω on the UPDI line must be bridged, or put the pogo pin on the chip side of it.' : ''}`;
     case 'locked':
       return 'The chip is locked. That should never happen with these engines: ask before going further.';
     case 'wrong-board':

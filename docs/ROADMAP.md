@@ -15,6 +15,7 @@ One task per Claude Code session. Start each session with: "Read docs/ROADMAP.md
 
 ### 1. Real-board bring-up (when the UPDI Friend arrives)
 Jonny runs this; Claude helps read results.
+- Found 15 Oct 2026: a 470 Ω on the board's UPDI line (between pad and chip) stops the chip's reply getting back ("No chip answered" after a double break). The UPDI Friend has its own resistor, so the board needs none. Bridge it on Core (and 6R1 on Pulse), and leave it off the next board revision.
 - Pulse A1, switch on 3V, board on USB power, pogo pin on UPDI pad. Choose UPDI Friend → Check board. Expect: ATtiny1614, ID 1E9422, "pulsetest 1.0" or "Unknown firmware".
 - Initialise with `pulse_1.0_full.hex`. Expect: verified, start-up animation plays.
 - Repeat on a Core A at 5V with `sota_leds_v1.2_10mhz.hex`.
