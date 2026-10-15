@@ -216,6 +216,15 @@
         <h2>Tune it</h2>
         <div class="rt-fields" id="rtFields"></div>
         <button class="btn quiet" id="rtReset" type="button">Reset to defaults</button>
+        <h2>Colour sets</h2>
+        <p class="note">Save the colours above under a name, and use them again later. Each set is for one board, so Core shows Core sets and Pulse shows Pulse sets. They are kept in the library folder.</p>
+        <div class="rt-controls">
+          <label>Saved <select id="rtPalSel"></select></label>
+          <button class="btn" id="rtPalUse" type="button">Use these colours</button>
+          <label>Name <input id="rtPalName" type="text" maxlength="40" placeholder="Warm club"></label>
+          <button class="btn" id="rtPalSave" type="button">Save current colours</button>
+        </div>
+        <p class="note" id="rtPalMsg" role="status"></p>
         <p class="note">Screen colours are only a guide: the LEDs' green is much stronger than a monitor's, so judge yellow and orange on the real drive. These settings are not saved or sent yet.</p>
       </div>
     </section>

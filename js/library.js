@@ -5,13 +5,15 @@
 //   engines/    .hex files (any names; recognised by the tag inside)
 //   phases/     phase files (.json)
 //   routines/   routines (.json)
+//   palettes/   saved colour sets (.json)
 //   drives/     the drive register, one .json per drive (P-0007.json)
 //   casings/    CAD models and LED positions (Stage 2)
 
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
+import { isPalette, paletteFileName } from './palettes.js';
 
-export const FOLDERS = ['engines', 'phases', 'routines', 'drives', 'casings'];
+export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings'];
 
 // ---------------------------------------------------------------- storage backends
 class FolderStore {
@@ -184,6 +186,16 @@ export class Library {
 
   async phases() {
     return this.jsonFiles('phases');
+  }
+
+  // Saved colour sets for one board. Saving under an existing name replaces it.
+  async palettes(family) {
+    return (await this.jsonFiles('palettes')).map((f) => f.data).filter((p) => isPalette(p) && (!family || p.family === family));
+  }
+
+  async savePalette(palette) {
+    if (!isPalette(palette)) throw new Error('That colour set is not complete.');
+    await this.writeJson('palettes', `${palette.family}-${paletteFileName(palette.name)}`, palette);
   }
 
   async drives() {
