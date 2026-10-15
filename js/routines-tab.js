@@ -5,7 +5,9 @@
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
 import { makePalette, applyPalette } from './palettes.js';
-import { PHASES, makePhaseFile, applyPhaseFile } from './phases.js';
+import { PHASES, makePhaseFile, applyPhaseFile, toEngineNames, fromEngineNames } from './phases.js';
+import { ROUTINE_PHASES, makeRoutine } from './routines.js';
+import { resolveRoutine } from './library.js';
 
 const CORE_FIELDS = [
   ['BRIGHTNESS', 'Overall brightness (0–255)', 1, 255],
@@ -168,6 +170,49 @@ export function initRoutinesTab({ $, el, state }) {
   }
   function phMsg(text) { $('rtPhMsg').textContent = text; }
 
+  // ---- routines (library routines/ folder): one phase file per phase, a colour set, a brightness
+  const rtPhaseSel = {};
+  ROUTINE_PHASES.forEach((p) => {
+    const sel = el('select', {});
+    rtPhaseSel[p.id] = sel;
+    $('rtRtPhases').append(el('label', {}, `${p.label} `, sel));
+  });
+  function rtMsg(text) { $('rtRtMsg').textContent = text; }
+  async function loadRoutines(pick) {
+    const lib = state.library;
+    $('rtRtSave').disabled = !lib;
+    const files = lib ? await lib.phaseFiles(family) : [];
+    for (const p of ROUTINE_PHASES) {
+      const sel = rtPhaseSel[p.id], keep = sel.value;
+      sel.replaceChildren(el('option', { value: '', text: 'Engine default' }));
+      const mine = files.filter((f) => f.phase === p.id);
+      for (const name of [...new Set(mine.map((f) => f.name))]) {
+        sel.append(el('option', { value: name, text: `${name} (newest)` }));
+        mine.filter((f) => f.name === name).forEach((f) => sel.append(el('option', { value: `${name}@${f.version}`, text: `${name} v${f.version} only` })));
+      }
+      sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
+    }
+    const pal = $('rtRtPal'), keepPal = pal.value;
+    pal.replaceChildren(el('option', { value: '', text: 'Engine default' }));
+    const sets = lib ? await lib.palettes(family) : [];
+    sets.forEach((x) => pal.append(el('option', { value: x.name, text: x.name })));
+    pal._sets = sets;
+    pal.value = [...pal.options].some((o) => o.value === keepPal) ? keepPal : '';
+    const sel = $('rtRtSel');
+    sel.replaceChildren(el('option', { value: '', text: lib ? 'Choose a routine' : 'No library folder' }));
+    const routines = lib ? await lib.routines(family) : [];
+    routines.forEach((r) => sel.append(el('option', { value: r.data.name, text: r.data.name })));
+    sel._routines = routines;
+    sel.disabled = $('rtRtLoad').disabled = !routines.length;
+    if (pick) sel.value = pick;
+  }
+  function routineInput() {
+    const phases = Object.fromEntries(ROUTINE_PHASES.map((p) => [p.id, rtPhaseSel[p.id].value]));
+    const palette = ($('rtRtPal')._sets || []).find((x) => x.name === $('rtRtPal').value) || null;
+    const b = $('rtRtBright').value.trim();
+    return { phases, palette, brightness: b === '' ? null : Number(b) };
+  }
+
   function changed() { pulseDirty = true; note(); drawStrip(); draw(); }
 
   function setFamily(f) {
@@ -178,7 +223,7 @@ export function initRoutinesTab({ $, el, state }) {
     buildBoard(); buildFields();
     pulseDirty = true;
     if (f === 'pulse' && !pulseStage1) frameAt(0);
-    note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {});
+    note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {});
   }
 
   function tick(now) {
@@ -212,12 +257,12 @@ export function initRoutinesTab({ $, el, state }) {
       const p = makePalette(family, $('rtPalName').value, S[family]);
       await state.library.savePalette(p);
       $('rtPalName').value = '';
-      await loadPalettes(p.name);
+      await loadPalettes(p.name); await loadRoutines();
       palMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
     } catch (e) { palMsg(e.message); }
   });
   PHASES.forEach((p) => $('rtPhSel').append(el('option', { value: p.id, text: p.label })));
-  $('rtPhSel').addEventListener('change', () => { phMsg(''); loadPhaseFiles().catch(() => {}); });
+  $('rtPhSel').addEventListener('change', () => { phMsg(''); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); });
   $('rtPhUse').addEventListener('click', () => {
     const f = ($('rtPhFile')._files || [])[Number($('rtPhFile').value)];
     if (!f || $('rtPhFile').value === '') return phMsg('Choose a phase file first.');
@@ -229,13 +274,36 @@ export function initRoutinesTab({ $, el, state }) {
     try {
       const saved = await state.library.savePhaseFile(makePhaseFile(family, $('rtPhSel').value, $('rtPhName').value, S[family]));
       $('rtPhName').value = '';
-      await loadPhaseFiles();
+      await loadPhaseFiles(); await loadRoutines();
       phMsg(`Saved "${saved.name}" v${saved.version}${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
     } catch (e) { phMsg(e.message); }
   });
+  $('rtRtSave').addEventListener('click', async () => {
+    try {
+      const r = makeRoutine(family, $('rtRtName').value, routineInput());
+      await state.library.saveRoutine(r);
+      state.routines = await state.library.routines();
+      $('rtRtName').value = '';
+      await loadRoutines(r.name);
+      rtMsg(`Saved "${r.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
+    } catch (e) { rtMsg(e.message); }
+  });
+  $('rtRtLoad').addEventListener('click', async () => {
+    const r = ($('rtRtSel')._routines || []).find((x) => x.data.name === $('rtRtSel').value);
+    if (!r) return rtMsg('Choose a routine first.');
+    try {
+      const resolved = await resolveRoutine(state.library, r.data, toEngineNames(family, S[family]));
+      let next = fromEngineNames(family, S[family], resolved);
+      if (family === 'core') for (const k of ['WHITE', 'RED', 'YELLOW', 'ORANGE']) if (resolved[k.toLowerCase()]) next[k] = [...resolved[k.toLowerCase()]];
+      if (resolved.brightness != null) next[family === 'core' ? 'BRIGHTNESS' : 'brightness'] = resolved.brightness;
+      S[family] = next;
+      buildFields(); changed();
+      rtMsg(`Showing "${r.data.name}".`);
+    } catch (e) { rtMsg(e.message); }
+  });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); }); // the strip can't be sized while hidden
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); }); // the strip can't be sized while hidden
   window.addEventListener('resize', () => { if (!$('p-routines').hidden) drawStrip(); });
   setFamily('core');
   requestAnimationFrame(tick);

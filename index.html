@@ -226,7 +226,7 @@
         </div>
         <p class="note" id="rtPalMsg" role="status"></p>
         <h2>Phase files</h2>
-        <p class="note">A phase file saves the settings for one part of the show: load-up, standard or beat. Saving under a name that exists makes a new version and keeps the old one. A routine will pick one file per phase. Colours are not in phase files: use colour sets for those. Recognition has no settings yet.</p>
+        <p class="note">A phase file saves the settings for one part of the show: load-up, standard or beat. Saving under a name that exists makes a new version and keeps the old one. A routine (below) picks one file per phase. Colours are not in phase files: use colour sets for those. Recognition has no settings yet.</p>
         <div class="rt-controls">
           <label>Phase <select id="rtPhSel"></select></label>
           <label>Saved <select id="rtPhFile"></select></label>
@@ -237,6 +237,20 @@
           <button class="btn" id="rtPhSave" type="button">Save current settings as this phase</button>
         </div>
         <p class="note" id="rtPhMsg" role="status"></p>
+        <h2>Routines</h2>
+        <p class="note">A routine picks one phase file for each phase, a colour set and a brightness. Leave a phase on "Engine default" to keep the engine's own look. "Newest" follows new versions of a phase file; pick a version to pin it. Saving under an existing name replaces that routine. Flash Station and Initialise list routines by name.</p>
+        <div class="rt-controls" id="rtRtPhases"></div>
+        <div class="rt-controls">
+          <label>Colours <select id="rtRtPal"></select></label>
+          <label>Brightness <input id="rtRtBright" type="number" min="1" max="255" placeholder="engine's own" style="width:110px"></label>
+        </div>
+        <div class="rt-controls">
+          <label>Saved <select id="rtRtSel"></select></label>
+          <button class="btn" id="rtRtLoad" type="button">Show in preview</button>
+          <label>Name <input id="rtRtName" type="text" maxlength="40" placeholder="Club night"></label>
+          <button class="btn" id="rtRtSave" type="button">Save routine</button>
+        </div>
+        <p class="note" id="rtRtMsg" role="status"></p>
         <p class="note">Screen colours are only a guide: the LEDs' green is much stronger than a monitor's, so judge yellow and orange on the real drive. These settings are not saved or sent yet.</p>
       </div>
     </section>
