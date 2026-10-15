@@ -5,8 +5,9 @@
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
 import { makePalette, applyPalette } from './palettes.js';
-import { PHASES, makePhaseFile, applyPhaseFile, toEngineNames, fromEngineNames } from './phases.js';
-import { ROUTINE_PHASES, makeRoutine } from './routines.js';
+import { PHASES, makePhaseFile, applyPhaseFile, toEngineNames } from './phases.js';
+import { ROUTINE_PHASES, makeRoutine, engineToPreview } from './routines.js';
+import { defaultProfile, makeProfile, drawnLeds, groupOf } from './profiles.js';
 import { resolveRoutine } from './library.js';
 
 const CORE_FIELDS = [
@@ -49,17 +50,14 @@ export function initRoutinesTab({ $, el, state }) {
 
   const lensEls = [];
 
-  // One side of the drive, front view. The two sides carry the same pattern, so only one LED of
-  // each pair is drawn. y is mm above the top of the USB A connector, x is mm from the centre line.
-  // `led` is the LED number (1-based) shown for that spot: change it here if the front is the other side.
-  const LED_SPOTS = {
-    core: [{ led: 1, x: -3.5, y: 6.5 }, { led: 2, x: 3.5, y: 6.5 }, { led: 3, x: 0, y: 46.5 }],
-    pulse: [{ led: 1, x: -3.5, y: 6.5 }, { led: 2, x: 3.5, y: 6.5 }, { led: 3, x: 0, y: 41.5 }, { led: 5, x: 0, y: 54.5 }],
-  };
+  // One side of the drive, front view, drawn from the drive profile (js/profiles.js): y is mm above
+  // the top of the USB A connector, x is mm from the centre line. The profile lists only LEDs whose
+  // position is known; `led` is the LED number (1-based): change it in the profile if the front is the other side.
+  const profile = { core: defaultProfile('core'), pulse: defaultProfile('pulse') };
   const MM = 4.5, PLUG_H = 14, PLUG_W = 12, BOARD_W = 16, TOP_PAD = 8; // px per mm, mm
 
   function buildBoard() {
-    const spots = LED_SPOTS[family];
+    const spots = drawnLeds(profile[family]);
     const topY = Math.max(...spots.map((q) => q.y)) + TOP_PAD;
     const board = $('rtBoard');
     board.replaceChildren();
@@ -73,7 +71,8 @@ export function initRoutinesTab({ $, el, state }) {
     for (const q of spots) {
       const lens = el('div', { class: 'rt-lens' });
       lens.style.cssText = `left:calc(50% + ${q.x * MM}px);top:${(topY - q.y) * MM}px`;
-      lens.title = `LED ${q.led}`;
+      const g = groupOf(profile[family], q.led);
+      lens.title = `LED ${q.led}${g ? ` (${g})` : ''}`;
       lensEls[q.led - 1] = lens;
       board.append(lens);
     }
@@ -231,6 +230,45 @@ export function initRoutinesTab({ $, el, state }) {
     return { phases, palette, brightness: b === '' ? null : Number(b) };
   }
 
+  // ---- drive profile (library casings/ folder): LED count, groups and each LED's position
+  function profMsg(text) { $('rtProfMsg').textContent = text; }
+  function buildProfileEditor() {
+    const p = profile[family];
+    const box = $('rtProfLeds');
+    box.replaceChildren();
+    for (const l of drawnLeds(p)) {
+      const g = groupOf(p, l.led);
+      const pos = (key, label) => {
+        const input = el('input', { type: 'number', step: 0.5, value: l[key], 'aria-label': `LED ${l.led} ${label}` });
+        input.addEventListener('input', () => {
+          const v = Number(input.value);
+          if (input.value === '' || !Number.isFinite(v)) return;
+          l[key] = v;
+          buildBoard(); draw();
+        });
+        return input;
+      };
+      box.append(el('div', { class: 'rt-field' }, el('span', { text: `LED ${l.led}${g ? `, ${g}` : ''}` }), pos('x', 'across (mm)'), pos('y', 'above the plug (mm)')));
+    }
+    $('rtProfNote').textContent = `${p.count} LEDs on this board. ${p.estimate ? 'These positions are estimates until you save a profile for the casing.' : ''} Across is mm from the centre (left is negative); above the plug is mm from the top of the USB A connector up towards the logo.`;
+  }
+  async function loadProfiles(pick) {
+    const lib = state.library;
+    const sel = $('rtProfSel');
+    sel.replaceChildren(el('option', { value: '', text: 'Estimated positions' }));
+    $('rtProfSave').disabled = !lib;
+    const found = lib ? await lib.profiles(family) : [];
+    found.forEach((x) => sel.append(el('option', { value: x.name, text: x.name })));
+    sel._profiles = found;
+    if (pick) { sel.value = pick; if (sel.value !== pick) sel.value = ''; }
+  }
+  function useProfile() {
+    const sel = $('rtProfSel');
+    const found = (sel._profiles || []).find((x) => x.name === sel.value);
+    profile[family] = found ? structuredClone(found) : defaultProfile(family);
+    buildProfileEditor(); buildBoard(); draw();
+  }
+
   function changed() { pulseDirty = true; note(); drawStrip(); draw(); }
 
   function setFamily(f) {
@@ -238,10 +276,11 @@ export function initRoutinesTab({ $, el, state }) {
     for (const k of ['core', 'pulse']) $(`rtFam-${k}`).setAttribute('aria-checked', String(k === f));
     $('rtRoomWrap').hidden = f !== 'pulse';
     t = 0; last = null;
-    buildBoard(); buildFields();
+    buildBoard(); buildFields(); buildProfileEditor();
     pulseDirty = true;
     if (f === 'pulse' && !pulseStage1) frameAt(0);
     note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {});
+    loadProfiles().then(useProfile).catch(() => {});
   }
 
   function tick(now) {
@@ -311,17 +350,25 @@ export function initRoutinesTab({ $, el, state }) {
     if (!r) return rtMsg('Choose a routine first.');
     try {
       const resolved = await resolveRoutine(state.library, r.data, toEngineNames(family, S[family]));
-      let next = fromEngineNames(family, S[family], resolved);
-      if (family === 'core') for (const k of ['WHITE', 'RED', 'YELLOW', 'ORANGE']) if (resolved[k.toLowerCase()]) next[k] = [...resolved[k.toLowerCase()]];
-      if (resolved.brightness != null) next[family === 'core' ? 'BRIGHTNESS' : 'brightness'] = resolved.brightness;
+      const next = engineToPreview(family, S[family], resolved);
       S[family] = next;
       buildFields(); changed();
       rtMsg(`Showing "${r.data.name}".`);
     } catch (e) { rtMsg(e.message); }
   });
+  $('rtProfSel').addEventListener('change', () => { profMsg(''); useProfile(); });
+  $('rtProfSave').addEventListener('click', async () => {
+    try {
+      const p = makeProfile(family, $('rtProfName').value, profile[family]);
+      await state.library.saveProfile(p);
+      $('rtProfName').value = '';
+      await loadProfiles(p.name); useProfile();
+      profMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}. Put ${p.name} in the casing box when you initialise a drive to use it.`);
+    } catch (e) { profMsg(e.message); }
+  });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); }); // the strip can't be sized while hidden
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); }); // the strip can't be sized while hidden
   window.addEventListener('resize', () => { if (!$('p-routines').hidden) drawStrip(); });
   setFamily('core');
   requestAnimationFrame(tick);

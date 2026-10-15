@@ -7,13 +7,14 @@
 //   routines/   routines (.json)
 //   palettes/   saved colour sets (.json)
 //   drives/     the drive register, one .json per drive (P-0007.json)
-//   casings/    CAD models and LED positions (Stage 2)
+//   casings/    drive profiles (.json: LED count, groups, LED positions); CAD models later
 
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
 import { isPalette, paletteFileName } from './palettes.js';
 import { isPhaseFile, phaseFileName } from './phases.js';
 import { isRoutine, routineFileName } from './routines.js';
+import { isProfile, profileFileName, defaultProfile } from './profiles.js';
 
 export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings'];
 
@@ -220,6 +221,23 @@ export class Library {
   async savePalette(palette) {
     if (!isPalette(palette)) throw new Error('That colour set is not complete.');
     await this.writeJson('palettes', `${palette.family}-${paletteFileName(palette.name)}`, palette);
+  }
+
+  // Drive profiles (casings/ folder), one per casing and board. Saving the same casing and board replaces it.
+  async profiles(family) {
+    return (await this.jsonFiles('casings')).map((f) => f.data).filter((p) => isProfile(p) && (!family || p.family === family));
+  }
+
+  async saveProfile(profile) {
+    if (!isProfile(profile)) throw new Error('That drive profile is not complete.');
+    const { estimate, ...clean } = profile; // the estimate flag belongs to the built-in default only
+    await this.writeJson('casings', profileFileName(clean), clean);
+  }
+
+  // The profile for a casing code (like "SOTA", any capitals) and board, or the built-in estimate.
+  async profileFor(casing, family) {
+    const code = String(casing || '').trim().toLowerCase();
+    return (await this.profiles(family)).find((p) => p.name.toLowerCase() === code) || defaultProfile(family);
   }
 
   async drives() {
