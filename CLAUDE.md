@@ -9,6 +9,10 @@ Live at https://synapto-studio.github.io/flash-station/ (GitHub Pages from `main
 ## Who you're working with
 Jonny: product designer/engineer, new to software. Explain in plain words, short steps and tables, no jargon without a one-line meaning. Always say which station and which board (Core / Pulse) an answer is for.
 
+Jonny does not know git or how code is organised, and only presses the buttons Claude tells him to. Never assume he knows words like branch, pull request, merge, conflict or commit: when one comes up, say in one line what it is and exactly which button to press (or offer to do it). Do the git work yourself where you can.
+
+Each Claude session works on its own branch, and a pull request is the button that asks to merge that branch into `main` (which is what goes live). Jonny often has several sessions open at once. Two sessions given the same task build it twice and the pull requests then clash. So: at the start of a session run `git fetch` and look at `origin/main` and the other `origin/claude/*` branches to see whether the task is already done or in progress; tell Jonny before building something that already exists; and say which tasks are safe to run in parallel (different files) and which are not. Before ending, check the branch merges cleanly into `origin/main` (`git merge --no-commit --no-ff origin/main`, then abort) and tell Jonny in plain words if it doesn't.
+
 Jonny wants regular reminders on using Claude efficiently. When a session gets long, drifts to a new topic, or a task is finished, say so in one line and suggest starting a fresh session, with the exact first message to paste (usually "Read docs/ROADMAP.md and do task N"). Tick finished tasks off in `docs/ROADMAP.md` before ending.
 
 ## Commands

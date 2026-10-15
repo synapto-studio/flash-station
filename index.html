@@ -25,6 +25,7 @@
       <button role="tab" id="t-station" aria-controls="p-station" aria-selected="false">Flash Station</button>
       <button role="tab" id="t-drives" aria-controls="p-drives" aria-selected="false">Drives</button>
       <button role="tab" id="t-routines" aria-controls="p-routines" aria-selected="false">Routines</button>
+      <button role="tab" id="t-preview" aria-controls="p-preview" aria-selected="false">Preview</button>
       <button role="tab" id="t-library" aria-controls="p-library" aria-selected="false">Library</button>
     </nav>
     <button class="libchip" id="libChip" type="button">No library folder</button>
@@ -46,7 +47,7 @@
         <ol class="steps">
           <li class="step" data-step="board">
             <h2><span class="n">1</span>Board on the jig</h2>
-            <div class="choice" role="radiogroup" aria-label="Board">
+            <div class="choice rt-choice" role="radiogroup" aria-label="Board">
               <button type="button" role="radio" data-family="core" aria-checked="false">
                 <strong>Core</strong><span>ATtiny412, 6 LEDs</span>
               </button>
@@ -241,6 +242,33 @@
           <thead><tr><th>Routine</th><th>Phase files</th><th>Changes from the engine</th></tr></thead>
           <tbody></tbody>
         </table></div>
+      </div>
+    </section>
+
+    <!-- ============================== Preview ============================== -->
+    <section class="panel" id="p-preview" role="tabpanel" aria-labelledby="t-preview" hidden>
+      <div class="wide">
+        <h1>Preview</h1>
+        <p class="lead">Preview what a drive's lights will do, using the same maths as the firmware. Change a setting and the preview replays straight away.</p>
+        <div class="choice pv-choice" role="radiogroup" aria-label="Board">
+          <button type="button" role="radio" id="pvFam-core" aria-checked="true"><strong>Core</strong><span>6 LEDs, motor-start look</span></button>
+          <button type="button" role="radio" id="pvFam-pulse" aria-checked="false"><strong>Pulse</strong><span>8 LEDs, follows the music</span></button>
+        </div>
+        <div class="pv-stage"><div class="pv-board" id="pvBoard"></div><div class="pv-clock" id="pvClock">0.00 s</div></div>
+        <div class="pv-controls">
+          <button class="btn" id="pvPlay" type="button">Pause</button>
+          <button class="btn" id="pvRestart" type="button">Power on again</button>
+          <label>Speed <select id="pvSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+          <label id="pvRoomWrap" hidden>Room <select id="pvRoom"><option value="silence">Silence</option><option value="home">Home</option><option value="bar">Bar</option><option value="club" selected>Club</option><option value="rig">Big rig</option></select></label>
+        </div>
+        <canvas id="pvStrip" class="pv-strip" aria-label="Colour timeline"></canvas>
+        <input id="pvScrub" class="pv-scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub through the timeline">
+        <p class="note" id="pvRows"></p>
+        <p class="note" id="pvNote"></p>
+        <h2>Tune it</h2>
+        <div class="pv-fields" id="pvFields"></div>
+        <button class="btn quiet" id="pvReset" type="button">Reset to defaults</button>
+        <p class="note">Screen colours are only a guide: the LEDs' green is much stronger than a monitor's, so judge yellow and orange on the real drive. These settings are not saved or sent yet.</p>
       </div>
     </section>
 
