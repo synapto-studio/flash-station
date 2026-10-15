@@ -13,6 +13,7 @@ import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
 import { isPalette, paletteFileName } from './palettes.js';
 import { isPhaseFile, phaseFileName } from './phases.js';
+import { isRoutine, routineFileName } from './routines.js';
 
 export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings'];
 
@@ -183,6 +184,12 @@ export class Library {
 
   async routines(family) {
     return (await this.jsonFiles('routines')).filter((r) => !family || r.data.family === family);
+  }
+
+  // Saving a routine under an existing name replaces it.
+  async saveRoutine(routine) {
+    if (!isRoutine(routine)) throw new Error('That routine is not complete.');
+    await this.writeJson('routines', routineFileName(routine), routine);
   }
 
   async phases() {

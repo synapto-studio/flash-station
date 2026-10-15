@@ -3,6 +3,7 @@
 One task per Claude Code session. Start each session with: "Read docs/ROADMAP.md and do task N." Tick it off here when it's done and checked.
 
 ## Done
+- [x] **Routine builder** (15 Oct 2026, fourth part of task 4). `js/routines.js`: a routine picks one phase file per phase (the newest version of a name, or one version pinned as `name@2`), a colour set (its colours are copied in) and an optional brightness. `Library.saveRoutine()` saves `routines/<board>-<name>.json`; the same name replaces. Routines tab has a Routines section: pick the files, save, then pick a saved routine and Show in preview (it resolves through `resolveRoutine` and fills the settings above). Checked by `test/routines.test.mjs` (resolves and packs for the engine) and in headless Chromium with the demo library. Not yet: delete or rename a routine, Initialise/Flash Station dropdowns only refresh the next time the library is read, and a built routine hasn't been run through a simulated board in the UI.
 - [x] **Phase files** (15 Oct 2026, third part of task 4). `js/phases.js`: a phase file (load-up, standard, beat; recognition has no settings yet) holds that phase's settings under the engine's own names, taken from the phase tags in `js/engines.js`; colours stay out (colour sets cover them). `Library.phaseFiles()` / `savePhaseFile()` save into `phases/` and every save of a name makes the next version (`pulse-loadup-fast-rise-v2.json`), never overwriting. `resolveRoutine` now also ignores phase files for the other board. Routines tab has a Phase files section: pick a phase, save the current settings under a name, or pick a saved file and use it. Checked by `test/phases.test.mjs` (including resolving and packing the result) and in headless Chromium with the demo library. Not yet: a screen to build and save routines, and the preview doesn't read routines yet.
 - [x] **Saved colour sets** (15 Oct 2026, second part of task 4). `js/palettes.js` (a set is a name, a board and its colours: Core WHITE/RED/YELLOW/ORANGE, Pulse white/red/orange), saved as `palettes/<board>-<name>.json` in the library via `Library.palettes()` / `savePalette()`. Routines tab has a Colour sets section: save the current colours under a name, pick one and use it. Same name replaces. Checked by `test/palettes.test.mjs` and in headless Chromium with the demo library. Not yet: delete or rename a set, and routines don't pick a set yet.
 - [x] **Preview maths ported into a Routines tab** (15 Oct 2026, first part of task 4). `js/preview-core.js` and `js/preview-pulse.js` are line-for-line ports of the two pages in `reference/`; `test/preview.test.mjs` runs the reference pages and checks every LED byte matches (Core every 10 ms for 25 s, Pulse on the demo track, with changed settings too). `js/routines-tab.js` is the tab: Core or Pulse, 6/8 LEDs, scrubbable colour timeline, settings fields, Pulse plays a demo drum and bass track through a simulated mic. Settings are not saved or sent to a drive yet. Not yet compared against a real drive.
@@ -36,10 +37,10 @@ Done when: a test harness proves bit timing within 2% at 100 and 1000 baud; Jonn
 Done when: generated frames match `test/ref_pulse_station.py` byte for byte, and a simulated drive ends with the new settings page and a valid trailer.
 
 ### 4. Routine editor
-- Phase files per phase (load-up, standard, beat, recognition) and versions: DONE (see Done above). Left: a screen where a routine picks one file per phase (`resolveRoutine` already resolves them).
+- Phase files per phase (load-up, standard, beat, recognition) and versions: DONE (see Done above). Routine screen: DONE (see Done above).
 - Saved colour sets (palettes) as library items: DONE (see Done above).
 - Drive profiles: LED count, groups, each LED's position from plug to logo (`casings/*.json`).
-- Live previews: DONE (see Done above). Left: drive the preview from the saved phase files and routines, and use the drive profile's LED positions.
+- Live previews: DONE (see Done above). Preview can now show a saved routine; left: use the drive profile's LED positions.
 Done when: a routine built in the editor initialises a simulated board and the preview matches the settings sent.
 
 ### 5. Station hello (needs firmware: pulsetest 1.1, coretest 1.3)
@@ -47,6 +48,6 @@ Drive plays its station animation only on the Flash Station; the pulse back into
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
-- 3D drive preview from Fusion exports (.glb) using the drive profiles.
+- 3D drive preview from Fusion exports (.glb) using the drive profiles. Plan (15 Oct 2026): once the enclosure is on, Jonny exports the enclosure and the PCB (PCB is 1 mm thick). Each simulated LED gets mapped to its real position on the board, and the whole drive lights up, not just one side. Until then the Routines tab draws one side with estimated positions (`LED_SPOTS` in `js/routines-tab.js`: heights from Jonny's measurements, board and plug widths and LED spacing are guesses).
 - rekordbox import: read beat grids and sections from a DJ's export on the drive, build per-track routines.
 - Owner version of the app, modelled on SoundSwitch: good defaults first, custom editing for people who want it.
