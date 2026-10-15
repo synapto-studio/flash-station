@@ -8,7 +8,7 @@
 // A phase reference is a phase file's name, or "name@version" to pin one version. Without a version
 // the newest is used. Colours are copied in from a colour set under the engine's own names.
 
-import { PHASES, slug } from './phases.js';
+import { PHASES, slug, fromEngineNames } from './phases.js';
 import { COLOUR_KEYS, isPalette } from './palettes.js';
 
 // Phases a routine can pick a file for (recognition has no settings yet).
@@ -42,3 +42,12 @@ export function isRoutine(r) {
 }
 
 export const routineFileName = (r) => `${r.family}-${slug(r.name)}.json`;
+
+// Turns settings in the engine's names (a resolved routine, or what is on a chip) into the Routines
+// preview's settings, with the colours and brightness too. The preview then shows what the drive does.
+export function engineToPreview(family, preview, e) {
+  const next = fromEngineNames(family, preview, e);
+  if (family === 'core') for (const k of COLOUR_KEYS.core) if (e[k.toLowerCase()]) next[k] = [...e[k.toLowerCase()]];
+  if (e.brightness != null) next[family === 'core' ? 'BRIGHTNESS' : 'brightness'] = e.brightness;
+  return next;
+}

@@ -216,6 +216,15 @@
         <h2>Tune it</h2>
         <div class="rt-fields" id="rtFields"></div>
         <button class="btn quiet" id="rtReset" type="button">Reset to defaults</button>
+        <h2>Drive profile</h2>
+        <p class="note" id="rtProfNote"></p>
+        <div class="rt-fields" id="rtProfLeds"></div>
+        <div class="rt-controls">
+          <label>Saved <select id="rtProfSel"></select></label>
+          <label>Casing <input id="rtProfName" type="text" maxlength="4" placeholder="SOTA" style="width:90px"></label>
+          <button class="btn" id="rtProfSave" type="button">Save drive profile</button>
+        </div>
+        <p class="note" id="rtProfMsg" role="status"></p>
         <h2>Colour sets</h2>
         <p class="note">Save the colours above under a name, and use them again later. Each set is for one board, so Core shows Core sets and Pulse shows Pulse sets. They are kept in the library folder.</p>
         <div class="rt-controls">
