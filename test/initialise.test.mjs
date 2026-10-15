@@ -88,6 +88,10 @@ test('library: register, numbering and routines from phase files', async () => {
   assert.equal(await lib.nextNumber('P'), 2);
   assert.equal(await lib.nextNumber('C'), 1);
   assert.equal((await lib.findDrive({ chipSerial: checked.info.serial })).drive, 'P-0001');
+  assert.equal((await lib.drives())[0].family, 'pulse', "an old record saved with 'P' reads as a Pulse drive (the Flash Station tab lists it)");
+  await lib.saveDrive({ ...rec, drive: 'P-0002', number: 2, family: 'pulse' });
+  assert.equal(await lib.nextNumber('P'), 3, 'old and new records count together');
+  assert.equal(await lib.nextNumber('pulse'), 3);
 
   await lib.writeJson('phases', 'loadup_fast.json', { type: 'phase', phase: 'loadup', name: 'loadup_fast', version: 1, settings: { riseMs: 600 } });
   await lib.writeJson('phases', 'loadup_fast_v2.json', { type: 'phase', phase: 'loadup', name: 'loadup_fast', version: 2, settings: { riseMs: 700 } });

@@ -487,7 +487,7 @@ $('initBtn').addEventListener('click', async () => {
       const existing = await state.library.findDrive({ chipSerial: checked.info.serial, label: d.label });
       await state.library.saveDrive(driveRecord({
         existing: existing && existing.drive === d.label ? existing : null,
-        label: d.label, family: fam().letter, number: d.number, board: d.board, casing: d.casing,
+        label: d.label, family: state.family, number: d.number, board: d.board, casing: d.casing,
         info: checked.info, engine: job.engine, routineName: job.routineName, image: job.image, settings: job.image.settings,
       }));
       await refreshLibrary();
