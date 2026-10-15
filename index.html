@@ -225,6 +225,18 @@
           <button class="btn" id="rtPalSave" type="button">Save current colours</button>
         </div>
         <p class="note" id="rtPalMsg" role="status"></p>
+        <h2>Phase files</h2>
+        <p class="note">A phase file saves the settings for one part of the show: load-up, standard or beat. Saving under a name that exists makes a new version and keeps the old one. A routine will pick one file per phase. Colours are not in phase files: use colour sets for those. Recognition has no settings yet.</p>
+        <div class="rt-controls">
+          <label>Phase <select id="rtPhSel"></select></label>
+          <label>Saved <select id="rtPhFile"></select></label>
+          <button class="btn" id="rtPhUse" type="button">Use these settings</button>
+        </div>
+        <div class="rt-controls">
+          <label>Name <input id="rtPhName" type="text" maxlength="40" placeholder="Fast rise"></label>
+          <button class="btn" id="rtPhSave" type="button">Save current settings as this phase</button>
+        </div>
+        <p class="note" id="rtPhMsg" role="status"></p>
         <p class="note">Screen colours are only a guide: the LEDs' green is much stronger than a monitor's, so judge yellow and orange on the real drive. These settings are not saved or sent yet.</p>
       </div>
     </section>

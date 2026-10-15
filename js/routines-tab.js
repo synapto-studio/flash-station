@@ -5,6 +5,7 @@
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
 import { makePalette, applyPalette } from './palettes.js';
+import { PHASES, makePhaseFile, applyPhaseFile } from './phases.js';
 
 const CORE_FIELDS = [
   ['BRIGHTNESS', 'Overall brightness (0–255)', 1, 255],
@@ -153,6 +154,20 @@ export function initRoutinesTab({ $, el, state }) {
   }
   function palMsg(text) { $('rtPalMsg').textContent = text; }
 
+  // ---- phase files (library phases/ folder)
+  async function loadPhaseFiles(pick) {
+    const lib = state.library;
+    const sel = $('rtPhFile');
+    sel.replaceChildren(el('option', { value: '', text: lib ? 'Choose a phase file' : 'No library folder' }));
+    $('rtPhSave').disabled = !lib;
+    const files = lib ? await lib.phaseFiles(family, $('rtPhSel').value) : [];
+    files.forEach((p, i) => sel.append(el('option', { value: String(i), text: `${p.name} v${p.version}` })));
+    sel.disabled = $('rtPhUse').disabled = !files.length;
+    sel._files = files;
+    if (pick !== undefined) sel.value = String(pick);
+  }
+  function phMsg(text) { $('rtPhMsg').textContent = text; }
+
   function changed() { pulseDirty = true; note(); drawStrip(); draw(); }
 
   function setFamily(f) {
@@ -163,7 +178,7 @@ export function initRoutinesTab({ $, el, state }) {
     buildBoard(); buildFields();
     pulseDirty = true;
     if (f === 'pulse' && !pulseStage1) frameAt(0);
-    note(); drawStrip(); draw(); loadPalettes().catch(() => {});
+    note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {});
   }
 
   function tick(now) {
@@ -201,9 +216,26 @@ export function initRoutinesTab({ $, el, state }) {
       palMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
     } catch (e) { palMsg(e.message); }
   });
+  PHASES.forEach((p) => $('rtPhSel').append(el('option', { value: p.id, text: p.label })));
+  $('rtPhSel').addEventListener('change', () => { phMsg(''); loadPhaseFiles().catch(() => {}); });
+  $('rtPhUse').addEventListener('click', () => {
+    const f = ($('rtPhFile')._files || [])[Number($('rtPhFile').value)];
+    if (!f || $('rtPhFile').value === '') return phMsg('Choose a phase file first.');
+    S[family] = applyPhaseFile(family, S[family], f);
+    buildFields(); changed();
+    phMsg(`Using "${f.name}" v${f.version}.`);
+  });
+  $('rtPhSave').addEventListener('click', async () => {
+    try {
+      const saved = await state.library.savePhaseFile(makePhaseFile(family, $('rtPhSel').value, $('rtPhName').value, S[family]));
+      $('rtPhName').value = '';
+      await loadPhaseFiles();
+      phMsg(`Saved "${saved.name}" v${saved.version}${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
+    } catch (e) { phMsg(e.message); }
+  });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadPalettes().catch(() => {}); }); // the strip can't be sized while hidden
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); }); // the strip can't be sized while hidden
   window.addEventListener('resize', () => { if (!$('p-routines').hidden) drawStrip(); });
   setFamily('core');
   requestAnimationFrame(tick);
