@@ -6,10 +6,14 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toHex } from '../js/intelhex.js';
-import { readEngine, PulseImage, PULSE } from '../js/engines.js';
-import { demoEngines, PULSE_DEFAULTS } from '../js/demo.js';
-import { testPlan, patchPlan, fullPlan, planMs, Station, wake } from '../js/station.js';
-import { SimStation, SimDrive } from '../js/sim-station.js';
+import { readEngine, PulseImage, PULSE, packSettings } from '../js/engines.js';
+import { crc16 } from '../js/crc.js';
+import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
+import {
+  testPlan, patchPlan, fullPlan, planMs, Station, wake,
+  crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
+} from '../js/station.js';
+import { SimStation, SimDrive, SimCoreDrive } from '../js/sim-station.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TMP = mkdtempSync(join(tmpdir(), 'fs-station-'));
@@ -143,4 +147,97 @@ test('a damaged frame is rejected by its CRC, and the next copy still gets throu
   for (const s of plan.slice(4)) drive.feed(s.bytes);
   assert.equal(drive.valid, true);
   assert.deepEqual(drive.settings(), { ...PULSE_DEFAULTS, ...NEW });
+});
+
+// ---------------------------------------------------------------- coretest (Core)
+const CORE_NEW = { ...CORE_DEFAULTS, brightness: 180, red: [255, 10, 0], whiteMs: 1500, breatheMs: 3000 };
+
+test('Core link test for blue is exactly 5AA504010000FF6A, 3 copies at 100 baud, 2 stop bits, 300 ms gaps', () => {
+  assert.deepEqual(steps(coreTestPlan([0, 0, 255])), Array(3).fill([100, 2, '5AA504010000FF6A', 300]));
+  assert.equal(crc8([]), 0);
+  assert.equal(crc8(Buffer.from('123456789')), 0xf4); // CRC-8 (poly 0x07, start 0) check value
+});
+
+test('Core settings message: 02 + the SOTA.LED block from its layout byte on + CRC-16 low byte first', () => {
+  const block = packSettings('SOTA.LED', CORE_NEW).subarray(8);
+  assert.equal(block.length, 98);
+  const pay = coreSettingsPayload(CORE_NEW);
+  assert.equal(pay.length, 101);
+  assert.equal(pay[0], 2);
+  assert.equal(hex(pay.subarray(1, 99)), hex(block));
+  assert.equal(pay[99] | (pay[100] << 8), crc16(block));
+  const msg = coreMessage(pay);
+  assert.equal(msg.length, 105);
+  assert.equal(hex(msg.subarray(0, 3)), '5AA565');
+  assert.equal(msg[104], crc8(msg.subarray(2, 104)));
+  const plan = coreSettingsPlan(CORE_NEW);
+  assert.deepEqual(steps(plan), Array(3).fill([100, 2, hex(msg), 300]));
+  const t = planMs(plan) / 1000;
+  assert.ok(t > 35 && t < 37, `settings ${t} s`);
+  assert.throws(() => coreSettingsPayload({ ...CORE_NEW, layout: 2 }), /layout 1 only/);
+});
+
+test('Core forget and hello messages', () => {
+  assert.deepEqual(steps(coreForgetPlan()), Array(3).fill([100, 2, hex(coreMessage([3, 0x5a])), 300]));
+  assert.deepEqual(steps(coreHelloPlan()), [[100, 2, hex(coreMessage([4])), 3500]]);
+  assert.equal(hex(coreMessage([4])), `5AA50104${crc8([1, 4]).toString(16).toUpperCase().padStart(2, '0')}`);
+});
+
+test('Core link test: the simulated drive shows the colour and saves nothing', async () => {
+  const drive = new SimCoreDrive(CORE_DEFAULTS);
+  const { st, sim } = await station(drive);
+  assert.ok((await st.run(coreTestPlan([9, 8, 7]))).completed);
+  assert.deepEqual(drive.colour, [9, 8, 7]);
+  assert.equal(drive.tests, 3);
+  assert.equal(drive.eeWrites, 0);
+  assert.equal(drive.source(), 'flash');
+  assert.ok(sim.elapsedMs > 3000 && sim.elapsedMs < 4000);
+});
+
+test('Core settings send: saved once in EEPROM, the same again writes nothing, forget goes back to the flash', async () => {
+  const drive = new SimCoreDrive(CORE_DEFAULTS);
+  const { st, sim } = await station(drive);
+  await st.run(coreSettingsPlan(CORE_NEW));
+  assert.equal(drive.source(), 'eeprom');
+  assert.deepEqual(drive.settings(), CORE_NEW);
+  assert.equal(drive.heard, 3);
+  assert.equal(drive.eeWrites, 1, 'copies that change nothing are ignored');
+  assert.ok(sim.elapsedMs > 35000 && sim.elapsedMs < 37000);
+  await st.run(coreSettingsPlan(CORE_NEW));
+  assert.equal(drive.eeWrites, 1);
+  await st.run(coreForgetPlan());
+  assert.equal(drive.source(), 'flash');
+  assert.deepEqual(drive.settings(), CORE_DEFAULTS);
+  assert.equal(drive.eeWrites, 2, 'forget writes once; the later copies find nothing to forget');
+  await st.run(coreHelloPlan());
+  assert.equal(drive.hellos, 1);
+});
+
+test('Core: a damaged copy is dropped by its CRC-8 and the next copy gets through', () => {
+  const drive = new SimCoreDrive(CORE_DEFAULTS);
+  const plan = coreSettingsPlan(CORE_NEW);
+  const bad = Uint8Array.from(plan[0].bytes);
+  bad[40] ^= 0x10;
+  drive.feed(bad);
+  assert.equal(drive.heard, 0);
+  assert.equal(drive.source(), 'flash');
+  drive.feed(plan[1].bytes);
+  assert.equal(drive.source(), 'eeprom');
+  assert.deepEqual(drive.settings(), CORE_NEW);
+});
+
+test('Core refuses a wrong layout byte or settings CRC-16 even when the CRC-8 is right, and ignores pulsetest', () => {
+  const drive = new SimCoreDrive(CORE_DEFAULTS);
+  const wrongLayout = Uint8Array.from(coreSettingsPayload(CORE_NEW));
+  wrongLayout[1] = 2;
+  const c = crc16(wrongLayout.subarray(1, 99));
+  wrongLayout[99] = c & 0xff;
+  wrongLayout[100] = c >> 8;
+  const wrongCrc = Uint8Array.from(coreSettingsPayload(CORE_NEW));
+  wrongCrc[99] ^= 1;
+  for (const p of [wrongLayout, wrongCrc]) drive.feed(coreMessage(p));
+  assert.equal(drive.heard, 2);
+  for (const s of patchPlan(newImage())) drive.feed(s.bytes);
+  assert.equal(drive.eeWrites, 0);
+  assert.equal(drive.source(), 'flash');
 });

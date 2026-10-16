@@ -1,9 +1,13 @@
 // The Flash Station tab: connect the box, pick the drive, send a link test, new settings or
-// a whole engine, and log every send in the drive's history.
+// a whole engine (Pulse), or a link test, new settings, forget or hello (Core), and log
+// every send in the drive's history.
 
 import { PulseImage } from './engines.js';
-import { Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration } from './station.js';
-import { SimStation, SimDrive } from './sim-station.js';
+import {
+  Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
+  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
+} from './station.js';
+import { SimStation, SimDrive, SimCoreDrive } from './sim-station.js';
 import { WebSerialTransport, webSerialSupported } from './serial.js';
 import { Library, MemoryStore, resolveRoutine } from './library.js';
 
@@ -14,12 +18,22 @@ const recall = () => { try { return localStorage.getItem(LAST_KEY); } catch { re
 export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) {
   const fs = { station: null, busy: false, stop: false };
 
-  const pulseDrives = () => state.drives.filter((d) => d.family === 'pulse').sort((a, b) => a.drive.localeCompare(b.drive));
-  const selectedDrive = () => pulseDrives().find((d) => d.drive === $('fsDrive').value) || null;
-  const engines = () => [
-    ...state.engines.filter((e) => e.kind === 'pulsetest'),
-    ...(fs.station && fs.station.transport.simulated ? state.demo.filter((e) => e.kind === 'pulsetest') : []),
-  ];
+  const KIND = { pulse: 'pulsetest', core: 'coretest' };
+  const sendable = () => state.drives.filter((d) => KIND[d.family]).sort((a, b) => a.drive.localeCompare(b.drive));
+  const selectedDrive = () => sendable().find((d) => d.drive === $('fsDrive').value) || null;
+  const isCore = () => (selectedDrive() || {}).family === 'core';
+  const engines = () => {
+    const kind = KIND[(selectedDrive() || {}).family] || 'pulsetest';
+    return [
+      ...state.engines.filter((e) => e.kind === kind),
+      ...(fs.station && fs.station.transport.simulated ? state.demo.filter((e) => e.kind === kind) : []),
+    ];
+  };
+  // coretest's receiver arrived in 1.3; a label without a version number is let through.
+  const coreTooOld = (label) => {
+    const v = /coretest (\d+)\.(\d+)/.exec(label || '');
+    return !!v && Number(v[1]) * 1000 + Number(v[2]) < 1003;
+  };
   const selectedEngine = () => engines()[Number($('fsEngine').value)] || null;
   const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, '0');
 
@@ -32,7 +46,8 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   function limits() {
     const drive = selectedDrive(), engine = selectedEngine();
     if (!fs.station) return { all: 'Connect the station first.' };
-    if (!drive) return { all: state.library ? 'The register has no Pulse drives yet. Initialise one first.' : 'Choose a library folder: the drive register lives there.' };
+    if (!drive) return { all: state.library ? 'The register has no Pulse or Core drives yet. Initialise one first.' : 'Choose a library folder: the drive register lives there.' };
+    if (drive.family === 'core') return coreLimits(drive, engine);
     const r = { test: null, settings: null, engine: null };
     if (!engine) r.settings = r.engine = 'Add a pulsetest engine file in the Library tab.';
     else if (drive.engine && drive.engine.label !== engine.label) {
@@ -42,16 +57,34 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     return r;
   }
 
+  function coreLimits(drive, engine) {
+    const label = drive.engine ? drive.engine.label : '';
+    if (coreTooOld(label)) return { all: `${drive.drive} runs ${label}, which can't hear the station. Initialise it with coretest 1.3 or later first.` };
+    const r = { test: null, settings: null, engine: 'Core has no bootloader: send a new engine at the Initialisation Station.', forget: null, hello: null };
+    if (!engine) r.settings = 'Add a coretest engine file in the Library tab.';
+    else if (drive.engine && drive.engine.label !== engine.label) {
+      r.settings = `${drive.drive} runs ${drive.engine.label}. Settings can only go to a drive running the same engine: re-initialise it at the Initialisation Station instead.`;
+    }
+    return r;
+  }
+
   function refreshButtons() {
     const lim = limits();
+    const core = isCore();
     const off = (btn, why) => { btn.disabled = fs.busy || !!(lim.all || why); };
     off($('fsTest'), lim.test);
     off($('fsSettings'), lim.settings);
     off($('fsEngineSend'), lim.engine);
+    off($('fsForget'), lim.forget);
+    off($('fsHello'), lim.hello);
+    $('fsEngineSend').hidden = core;
+    $('fsForget').hidden = $('fsHello').hidden = !core;
+    $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
+    $('fsSettings').textContent = `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
     for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
-    const why = lim.all || lim.settings || lim.engine || '';
+    const why = lim.all || lim.settings || (core ? '' : lim.engine) || '';
     $('fsEngineNote').textContent = why;
     const e = selectedEngine();
     if (!why && e) {
@@ -61,20 +94,24 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
 
   // ------------------------------------------------------------ pickers
   function refresh() {
-    const drives = pulseDrives();
+    const drives = sendable();
     const sel = $('fsDrive');
     const prev = sel.value || recall();
+    const prevFamily = (selectedDrive() || {}).family;
     sel.replaceChildren();
-    if (!drives.length) sel.append(el('option', { value: '', text: 'No Pulse drives in the register' }));
+    if (!drives.length) sel.append(el('option', { value: '', text: 'No Pulse or Core drives in the register' }));
     for (const d of drives) sel.append(el('option', { value: d.drive, text: `${d.drive} · ${d.board} · ${d.routine || 'engine defaults'}${d.drive === recall() ? ' (last used)' : ''}` }));
     if (drives.some((d) => d.drive === prev)) sel.value = prev;
-    $('fsDriveNote').textContent = drives.length ? 'Core drives aren\'t listed: coretest has no receiver yet.' : '';
+    const drive = selectedDrive();
+    $('fsDriveNote').textContent = drive && drive.family === 'core'
+      ? 'Core: settings arrive at 100 baud, so a send takes about 36 s. The drive restarts its animation when they land.'
+      : '';
 
     const es = $('fsEngine');
     const list = engines();
-    const keep = es.value;
+    const keep = drive && drive.family === prevFamily ? es.value : '';
     es.replaceChildren();
-    if (!list.length) es.append(el('option', { value: '', text: 'No pulsetest engines yet' }));
+    if (!list.length) es.append(el('option', { value: '', text: `No ${KIND[(drive || {}).family] || 'pulsetest'} engines yet` }));
     list.forEach((e, i) => es.append(el('option', { value: String(i), text: `${e.label}, from ${e.fileName}` })));
     const d = selectedDrive();
     const match = d && d.engine ? list.findIndex((e) => e.fileName === d.engine.file) : -1;
@@ -90,7 +127,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const d = selectedDrive();
     sel.replaceChildren(el('option', { value: '', text: 'Engine defaults' }));
     if (d && d.settings) sel.append(el('option', { value: '@drive', text: `Keep ${d.drive}'s current lighting` }));
-    for (const r of state.routines.filter((r) => r.data.family === 'pulse')) sel.append(el('option', { value: r.data.name, text: r.data.name }));
+    for (const r of state.routines.filter((r) => r.data.family === (d ? d.family : 'pulse'))) sel.append(el('option', { value: r.data.name, text: r.data.name }));
     sel.value = [...sel.options].some((o) => o.value === prev) ? prev : d && d.routine && [...sel.options].some((o) => o.value === d.routine) ? d.routine : d && d.settings ? '@drive' : '';
   }
 
@@ -139,7 +176,8 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   $('fsSim').addEventListener('click', async () => {
     try {
       if (!state.library) await setLibrary(new Library(new MemoryStore('Demo library (not saved)')));
-      if (!pulseDrives().length) await demoDrive();
+      if (!sendable().some((d) => d.family === 'pulse')) await demoDrive('pulse');
+      if (!sendable().some((d) => d.family === 'core')) await demoDrive('core');
       await useStation(new SimStation(null), 'Simulated station');
     } catch (e) {
       $('fsStatus').textContent = e.message;
@@ -153,12 +191,15 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     refresh();
   });
 
-  // A made-up P-0001 so the simulated station has something to send to.
-  async function demoDrive() {
-    const e = state.demo.find((x) => x.kind === 'pulsetest');
+  // A made-up P-0001 or C-0001 so the simulated station has something to send to.
+  async function demoDrive(family) {
+    const e = state.demo.find((x) => x.kind === KIND[family]);
     const now = new Date().toISOString();
+    const who = family === 'core'
+      ? { drive: 'C-0001', board: 'Core A', chip: 'ATtiny412' }
+      : { drive: 'P-0001', board: 'Pulse A2', chip: 'ATtiny1614' };
     await state.library.saveDrive({
-      drive: 'P-0001', family: 'pulse', number: 1, board: 'Pulse A2', casing: 'SOTA', chip: 'ATtiny1614',
+      ...who, family, number: 1, casing: 'SOTA',
       engine: { label: e.label, file: e.fileName, kind: e.kind }, routine: null, settings: e.defaults,
       initialised: now, updated: now, history: [],
     });
@@ -189,7 +230,11 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (img) event.imageId = hex4(img.imageId());
       if (built.routine !== undefined) event.routine = built.routine;
       // The simulated station gets a simulated drive that starts as the register says.
-      if (fs.station.transport.simulated) fs.station.transport.drive = new SimDrive(new PulseImage(engine.app, engine.version, drive.settings));
+      if (fs.station.transport.simulated) {
+        fs.station.transport.drive = drive.family === 'core'
+          ? simCoreDrive(drive, engine)
+          : new SimDrive(new PulseImage(engine.app, engine.version, drive.settings));
+      }
       const total = planMs(plan);
       log(`${action} to ${drive.drive}: ${plan.length} sends, about ${formatDuration(total)}`);
       setProgress(`${action}: starting. Keep ${drive.drive} in the socket.`, 0);
@@ -201,7 +246,22 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       event.seconds = Math.round((Date.now() - t0) / 1000);
       event.result = r.completed ? 'Done' : 'Stopped before the end';
       setProgress(r.completed ? `${action}: done. ${how.done}` : `${action}: stopped. ${how.stopped}`, r.completed ? 1 : null);
-      if (r.completed && settings) drive.settings = settings;
+      if (r.completed && settings) {
+        // A Core keeps its flashed settings under the sent ones; remember them for "forget".
+        if (drive.family === 'core' && !drive.flashedSettings) {
+          drive.flashedSettings = drive.settings;
+          drive.flashedRoutine = drive.routine;
+        }
+        drive.settings = settings;
+      }
+      if (r.completed && how.forget) {
+        if (drive.flashedSettings) {
+          drive.settings = drive.flashedSettings;
+          drive.routine = drive.flashedRoutine ?? null;
+        }
+        delete drive.flashedSettings;
+        delete drive.flashedRoutine;
+      }
       if (r.completed && how.engine) drive.engine = { label: engine.label, file: engine.fileName, kind: engine.kind };
       if (r.completed && built.routine !== undefined) drive.routine = built.routine;
     } catch (e) {
@@ -225,20 +285,48 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     refresh();
   }
 
+  // A simulated Core: its flash holds the settings it was initialised with, its EEPROM the
+  // ones sent since (if any), as the register says.
+  function simCoreDrive(drive, engine) {
+    const sim = new SimCoreDrive(drive.flashedSettings || drive.settings || engine.defaults);
+    if (drive.flashedSettings && drive.settings) sim.feed(coreSettingsPlan(drive.settings)[0].bytes);
+    sim.eeWrites = sim.restarts = sim.heard = 0;
+    return sim;
+  }
+
   const routineName = () => ($('fsRoutine').value === '@drive' || !$('fsRoutine').value ? undefined : $('fsRoutine').value);
 
   $('fsTest').addEventListener('click', () => {
     const c = $('fsColour').value;
     const rgb = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
-    go('Link test', async () => ({ plan: testPlan(rgb) }), { done: 'If the drive showed the colour, the link works.', stopped: 'Nothing was saved.' });
+    const plan = isCore() ? coreTestPlan(rgb) : testPlan(rgb);
+    go('Link test', async () => ({ plan }), { done: 'If the drive showed the colour, the link works.', stopped: 'Nothing was saved.' });
   });
 
   $('fsSettings').addEventListener('click', () =>
     go('Sent settings', async (drive, engine) => {
       const settings = await chosenSettings(drive, engine);
+      if (drive.family === 'core') {
+        return { settings, plan: coreSettingsPlan(settings), routine: routineName() };
+      }
       const img = new PulseImage(engine.app, engine.version, settings);
       return { img, settings: img.settings, plan: patchPlan(img), routine: routineName() };
-    }, { done: 'Unplug the drive; it restarts with the new lighting.', stopped: 'The drive keeps its old lighting until a full copy arrives. Send again.' }));
+    }, isCore()
+      ? { done: 'The drive restarts its animation with the new lighting; it keeps it after unplugging.', stopped: 'The drive keeps its old lighting until a full copy arrives. Send again.' }
+      : { done: 'Unplug the drive; it restarts with the new lighting.', stopped: 'The drive keeps its old lighting until a full copy arrives. Send again.' }));
+
+  $('fsForget').addEventListener('click', () =>
+    go('Forgot sent settings', async () => ({ plan: coreForgetPlan() }), {
+      done: 'The drive is back on the settings it was initialised with and restarts its animation.',
+      stopped: 'If a full copy arrived the drive went back to its flashed settings; send again to be sure.',
+      forget: true,
+    }));
+
+  $('fsHello').addEventListener('click', () =>
+    go('Station hello', async () => ({ plan: coreHelloPlan() }), {
+      done: 'The drive should have flickered white for 3 s. The station can\'t read the answer yet.',
+      stopped: 'Nothing was saved.',
+    }));
 
   $('fsEngineSend').addEventListener('click', () => {
     if (!window.confirm('Send the whole engine? It takes 3 to 6 minutes. Keep the drive in the socket the whole time.')) return;

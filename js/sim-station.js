@@ -1,11 +1,12 @@
-// A simulated station box with a simulated pulsetest drive in its socket, so the Flash
-// Station tab and its tests need no hardware. The drive half is the bootloader's frame
-// decoder: it finds 5A A5 frames in the power-line bytes, checks the CRC, writes only
-// pages that differ, marks the routine unfinished at the first change and is valid again
-// only when the trailer lands and everything adds up.
+// A simulated station box with a simulated drive in its socket, so the Flash Station tab
+// and its tests need no hardware. SimDrive is pulsetest's bootloader frame decoder: it
+// finds 5A A5 frames in the power-line bytes, checks the CRC, writes only pages that
+// differ, marks the routine unfinished at the first change and is valid again only when
+// the trailer lands and everything adds up. SimCoreDrive is coretest 1.3's receiver.
 
 import { crc16 } from './crc.js';
-import { PULSE, unpackSettings } from './engines.js';
+import { crc8 } from './station.js';
+import { PULSE, packSettings, unpackSettings } from './engines.js';
 
 const LEN = { 0x48: 36, 0x50: 68, 0x54: 3 }; // H, P, T
 const le16 = (b, i) => b[i] | (b[i + 1] << 8);
@@ -112,6 +113,77 @@ export class SimDrive {
     }
     // The trailer is checked whenever it arrives, even if it was already there.
     if (index === PULSE.TRAILER_PAGE) this.valid = this.imageValid() && crc16(Uint8Array.from([...this.app(), ...data])) === h.imageId;
+  }
+}
+
+// coretest 1.3's receiver (handleMessage and onByte in coretest.ino), byte for byte: find
+// 5A A5, take len (1 to 101), the payload and its CRC-8. A bad byte just drops the message
+// and the hunt for 5A A5 starts again. Settings sent by the station live in EEPROM (98
+// bytes from the layout byte on, then their CRC-16) and win over the ones in the flash.
+const CORE_SET_LEN = 98;
+const CORE_MSG_MAX = 1 + CORE_SET_LEN + 2;
+
+export class SimCoreDrive {
+  constructor(settings) {
+    this.flash = packSettings('SOTA.LED', settings); // the tagged block in the flashed engine
+    this.ee = new Uint8Array(128).fill(0xff); // ATtiny412 EEPROM, erased when initialised
+    this.rx = { state: 0, len: 0, pos: 0, crc: 0, msg: [] };
+    this.colour = null;
+    this.tests = 0;
+    this.hellos = 0;
+    this.heard = 0; // messages whose CRC-8 was right
+    this.eeWrites = 0;
+    this.restarts = 0;
+  }
+
+  feed(bytes) {
+    for (const b of bytes) this.onByte(b);
+  }
+
+  onByte(b) {
+    const r = this.rx, s = r.state;
+    r.state = 0;
+    if (s === 0) { if (b === 0x5a) r.state = 1; }
+    else if (s === 1) { if (b === 0xa5) r.state = 2; else if (b === 0x5a) r.state = 1; }
+    else if (s === 2) { if (b && b <= CORE_MSG_MAX) { r.len = b; r.msg = []; r.crc = crc8([b]); r.state = 3; } }
+    else if (s === 3) { r.msg.push(b); r.crc = crc8([b], r.crc); r.state = r.msg.length < r.len ? 3 : 4; }
+    else if (b === r.crc) { this.heard++; this.handle(Uint8Array.from(r.msg)); }
+  }
+
+  eepromValid() {
+    const e = this.ee;
+    return e[0] === this.flash[8] && crc16(e.subarray(0, CORE_SET_LEN)) === (e[CORE_SET_LEN] | (e[CORE_SET_LEN + 1] << 8));
+  }
+
+  source() {
+    return this.eepromValid() ? 'eeprom' : 'flash';
+  }
+
+  settings() {
+    if (!this.eepromValid()) return unpackSettings('SOTA.LED', this.flash);
+    return unpackSettings('SOTA.LED', Uint8Array.from([...this.flash.subarray(0, 8), ...this.ee.subarray(0, CORE_SET_LEN)]));
+  }
+
+  handle(m) {
+    const type = m[0], p = m.subarray(1), len = m.length;
+    if (type === 1 && len === 4) {
+      this.colour = [p[0], p[1], p[2]];
+      this.tests++;
+    } else if (type === 2 && len === CORE_MSG_MAX && p[0] === this.flash[8]
+               && crc16(p.subarray(0, CORE_SET_LEN)) === (p[CORE_SET_LEN] | (p[CORE_SET_LEN + 1] << 8))) {
+      const now = p.subarray(0, CORE_SET_LEN + 2);
+      if (!now.every((v, i) => v === this.ee[i])) {
+        this.ee.set(now);
+        this.eeWrites++;
+        this.restarts++;
+      }
+    } else if (type === 3 && len === 2 && p[0] === 0x5a && this.eepromValid()) {
+      this.ee[CORE_SET_LEN] ^= 0xff;
+      this.eeWrites++;
+      this.restarts++;
+    } else if (type === 4 && len === 1) {
+      this.hellos++;
+    }
   }
 }
 

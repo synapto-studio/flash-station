@@ -134,7 +134,7 @@
     <section class="panel" id="p-station" role="tabpanel" aria-labelledby="t-station" hidden>
       <div class="wide fs">
         <h1>Flash Station</h1>
-        <p class="lead">Plug a sealed drive into the station box and send it new lighting through its USB power. Pulse with pulsetest only for now; Core joins with coretest 1.3.</p>
+        <p class="lead">Plug a sealed drive into the station box and send it new lighting through its USB power. Pulse drives need pulsetest, Core drives coretest 1.3 or later.</p>
 
         <h2>1 · Station</h2>
         <div class="row">
@@ -167,6 +167,8 @@
         <div class="row">
           <button type="button" class="btn primary" id="fsSettings">Send settings (about 15 s)</button>
           <button type="button" class="btn" id="fsEngineSend">Send whole engine (3 to 6 min)</button>
+          <button type="button" class="btn" id="fsForget" hidden>Back to flashed settings (about 4 s)</button>
+          <button type="button" class="btn quiet" id="fsHello" hidden>Station hello (about 5 s)</button>
           <button type="button" class="btn quiet" id="fsStop" hidden>Stop</button>
         </div>
         <div class="meter fs-meter" aria-hidden="true"><span id="fsMeter"></span></div>

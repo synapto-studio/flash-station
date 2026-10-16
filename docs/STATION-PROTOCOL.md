@@ -1,6 +1,6 @@
 # Power-line protocol and station wiring
 
-The Flash Station talks to a sealed drive only through its USB 5 V. A transistor in the drive's ground return drops the supply by one diode drop (about 0.6 V) for each 0 bit. The drive's data lines are never touched, so the memory chip is unaffected. Drives can't answer back yet (see the station hello in the roadmap).
+The Flash Station talks to a sealed drive only through its USB 5 V. A transistor in the drive's ground return drops the supply by one diode drop (about 0.6 V) for each 0 bit. The drive's data lines are never touched, so the memory chip is unaffected. Drives can't answer back yet: coretest 1.3 sends a station hello (below), but the station can't read it yet (roadmap task 5).
 
 ## Station wiring (XIAO RP2040)
 
@@ -58,5 +58,27 @@ Start bit (dip), 8 data bits LSB first (dip = 0), 2 stop bits (full), 10 ms per 
 | `02` + 45 settings bytes (the `SOTA.MIC` block from its layout byte) + CRC-16 | new settings, saved to EEPROM |
 | `03 5A` | forget sent settings, back to the flashed ones |
 
-## coretest
-No receiver yet. coretest 1.3 adds one (10 MHz build, settings into EEPROM, like Beat) plus the station hello. Its protocol gets added here when it's written.
+## coretest 1.3 (Core, settings only, no bootloader), 100 baud
+
+Core has no divider: the chip reads its own 1.1 V reference against its supply 1,000 times a second, so a dip shows up with no extra parts. Needs the 10 MHz build of coretest 1.3 or later; older Core engines can't hear the station. Source: firmware repo `coretest/README.md`, "Flash Station protocol (Core)".
+
+**Line:** start bit (dip), 8 data bits LSB first (dip = 0), 2 stop bits (full), 10 ms a bit. Station command: `SEND 100 2 <hex> <gapMs>`. Same as Beat v1.2. No wake-up call.
+
+**Message:** `5A A5 len payload… crc8`, CRC-8 polynomial 0x07, start 0, over len and payload. Each message is sent 3 times, one SEND a copy, with a 300 ms gap.
+
+| Payload | Meaning |
+| --- | --- |
+| `01 r g b` | Link test: all 6 LEDs show this colour (as sent, no brightness cap) for 2 s. Nothing saved. Blue is exactly `5AA504010000FF6A` |
+| `02` + 98 bytes + CRC-16 | New settings: the `SOTA.LED` block from its layout byte on (bytes 8–105), then CRC-16/CCITT (poly 0x1021, start 0xFFFF) of those 98 bytes, low byte first. len = 101. Refused unless the layout byte is 1 and both checks pass. Saved in EEPROM; the animation restarts from power-on. A copy that matches what's saved is ignored |
+| `03 5A` | Forget the sent settings, back to the ones in the flash (animation restarts) |
+| `04` | Station hello (below). Sent **once**, gapMs 3500, so the line stays full while the drive answers |
+
+**Plans** (`js/station.js`):
+- *Link test:* 3 copies of the `01` message, 300 ms gaps. About 4 s (the drive shows each copy it hears for 2 s).
+- *Settings:* 3 copies of the 105-byte `02` message, 300 ms gaps. 11.6 s a copy, about 36 s in all. A drive plugged in during copy 1 takes copy 2.
+- *Back to flashed settings:* 3 copies of `03 5A`. About 4 s.
+- *Station hello:* one `04` message, 3.5 s gap. About 5 s.
+
+**Station hello (drive → station):** for 3 s all LEDs flicker full white / off. 1000 baud, 8N1, LSB first, LEDs on = 1 (and on between frames), off = 0. Frame: `5A`, ID card bytes 5–8 (family `C`, drive number low, high, board code), CRC-8 of those 4 bytes; then 10 ms of on. Sent 43 times. A drive with no ID card sends `FF FF FF FF`. The station sees it as a change in the current through its transistor (sense wire on A0). Station 0.1 can't read it yet (it only averages A0): roadmap task 5.
+
+**EEPROM:** bytes 0–97 settings (from the layout byte), 98–99 their CRC-16. Re-initialising a drive at the Initialisation Station erases EEPROM, so it goes back to the settings in the file it was given.
