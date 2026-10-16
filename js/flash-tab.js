@@ -123,6 +123,12 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     try {
       if (!webSerialSupported()) throw new StationError('Open this page in Chrome or Edge to talk to the station.');
       const t = await WebSerialTransport.request();
+      // Choosing the station again while connected: let go of the old connection first,
+      // or Chrome says the port is already open.
+      if (fs.station) {
+        await fs.station.close().catch(() => {});
+        fs.station = null;
+      }
       await useStation(t, t.describe());
     } catch (e) {
       if (e.name !== 'NotFoundError') $('fsStatus').textContent = e.message;

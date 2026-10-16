@@ -134,6 +134,8 @@ export class Station {
   }
 
   async command(line, timeoutMs = 3000) {
+    // A reply that arrived after an earlier timeout must not be taken as this one's answer.
+    if (this.transport.discard) this.transport.discard();
     await this.transport.write(new TextEncoder().encode(`${line}\n`));
     const reply = await this.readLine(timeoutMs);
     if (reply.startsWith('ERR')) throw new StationError(`The station refused that: ${reply.slice(3).trim() || 'no reason given'}`);

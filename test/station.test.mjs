@@ -63,6 +63,12 @@ test('station: HELLO, bad commands and bad SENDs are explained', async () => {
   await assert.rejects(bad.connect(), /isn't a Synapto station/);
 });
 
+test('a late reply from a timed-out command is not taken as the next answer', async () => {
+  const { st } = await station(null);
+  st.transport.rx.push(...Buffer.from('OK\n')); // the box answered a SEND after the app gave up
+  assert.match(await st.command('HELLO'), /^SYNAPTO-STATION/);
+});
+
 test('link test shows the colour and saves nothing', async () => {
   const drive = new SimDrive(oldImage());
   const before = hex(drive.app());
