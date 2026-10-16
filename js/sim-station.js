@@ -143,6 +143,10 @@ export class SimStation {
     return Uint8Array.from(this.rx.splice(0, n));
   }
 
+  discard() {
+    this.rx = [];
+  }
+
   async write(bytes) {
     for (const c of bytes) {
       if (c === 10) {

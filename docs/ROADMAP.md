@@ -23,6 +23,7 @@ Jonny runs this; Claude helps read results.
 
 ### 2. XIAO station firmware (private firmware repo, not this one) — firmware done 14 Oct 2026, bench test to do
 station 0.1 is in the firmware repo's `station/` (commands in `docs/STATION-PROTOCOL.md`). Checked in simulation and on an emulated RP2040. Left: build the box, flash the `.uf2`, press BOOT with a Pulse A2 in the socket and see the link-test colour.
+**First real run (16 Oct 2026), Pulse A2 P-0002:** app → box → socket all work (sends finish, socket VBUS averages ~4.7 V during the wake-up call). The drive only hears the station if it is plugged in *during* the wake-up call (bootloader's power-up listen works). A drive already running pulsetest 1.0 does not reset into the bootloader on the wake-up call, so that listener is missing or not working in the engine firmware: fix in the private firmware repo. Until then: click the send, then plug the drive in within ~2 s.
 Arduino (Earle Philhower's RP2040 core), output a `.uf2`. USB serial command set, one line in, one line out:
 - `HELLO` → `SYNAPTO-STATION 0.1`
 - `SEND <baud> <stopbits> <hex> <gapMs>` → sends the bytes on D6 (idle high = full 5 V, 0 = dip), holds full supply for gapMs, replies `OK`. Bit-banged with a hardware timer so 100 baud (Beat) and 1000 baud (pulsetest) both work.

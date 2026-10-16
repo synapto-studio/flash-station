@@ -92,6 +92,11 @@ export class WebSerialTransport {
     return Uint8Array.from(this.buf.splice(0, n));
   }
 
+  // Drops anything received but not read yet (a late reply to a command that timed out).
+  discard() {
+    this.buf = [];
+  }
+
   async write(bytes) {
     const w = this.port.writable.getWriter();
     try {
