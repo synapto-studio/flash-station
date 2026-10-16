@@ -14,7 +14,8 @@ One task per Claude Code session. Start each session with: "Read docs/ROADMAP.md
 
 ## Next, in order
 
-### 1. Real-board bring-up (when the UPDI Friend arrives)
+### 1. Real-board bring-up — DONE 16 Oct 2026
+Jonny initialised a Pulse and a Core drive on real boards with the UPDI Friend.
 Jonny runs this; Claude helps read results.
 - Pulse A1, switch on 3V, board on USB power, pogo pin on UPDI pad. Choose UPDI Friend → Check board. Expect: ATtiny1614, ID 1E9422, "pulsetest 1.0" or "Unknown firmware".
 - Initialise with `pulse_1.0_full.hex`. Expect: verified, start-up animation plays.
