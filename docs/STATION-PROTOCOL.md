@@ -1,6 +1,6 @@
 # Power-line protocol and station wiring
 
-The Flash Station talks to a sealed drive only through its USB 5 V. A transistor in the drive's ground return drops the supply by one diode drop (about 0.6 V) for each 0 bit. The drive's data lines are never touched, so the memory chip is unaffected. A drive answers back only to a station hello (below), by flickering its LEDs; station 0.2's `ASK` reads that on the sense wire.
+The Flash Station talks to a sealed drive only through its USB 5 V. A transistor in the drive's ground return drops the supply by one diode drop (about 0.6 V) for each 0 bit. The drive's data lines are never touched, so the memory chip is unaffected. A drive answers back by flickering its LEDs, which the station reads on the sense wire: when it's plugged in (coretest 1.4, pulsetest 1.1; station 0.2's `WAIT`) or to a station hello (coretest 1.3 on; station 0.2's `ASK`).
 
 ## Station wiring (XIAO RP2040)
 
@@ -24,9 +24,17 @@ USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 | `SENSE` | `SENSE <raw 0-4095> <millivolts>` on A0 (average of 64) |
 | `SHOW` | `OK` (replays the station's start-up light show) |
 | `ASK <baud> <stopbits> <hex> <listenMs>` (station 0.2) | `HEARD <hex>`, or `HEARD` alone if nothing was heard. Sends like SEND, then holds full supply for listenMs while reading the drive's answer on A0 (below) |
+| `WAIT <ms>` (station 0.2) | `DRIVE <hex>` as soon as a drive is plugged in (`DRIVE` alone if it said nothing), or `NONE` after ms (1–60000) with no plug-in |
 | anything wrong | `ERR <what to fix>` |
 
-**ASK, for station 0.2 (to build in the firmware repo):** after the last stop bit, sample A0 at least 8 times a bit (8 kHz or faster) for listenMs. LEDs on draw more current, so A0 sits higher: that is a 1 (and the idle level), LEDs off is a 0. Set the threshold halfway between the lowest and highest readings so far. Decode 1000 baud, 8N1, LSB first (start bit = low, stop bit = high) and reply with every byte decoded, in order, up to 512 bytes. No checking or framing in the box: the app finds the copies and checks their CRC-8 (`parseHello` in `js/station.js`). The app only uses ASK when `HELLO` says 0.2 or later; with 0.1 it falls back to a plain SEND hello and picks the drive by hand. `js/sim-station.js` `SimStation` answers ASK like this.
+**ASK, for station 0.2 (to build in the firmware repo):** after the last stop bit, sample A0 at least 8 times a bit (8 kHz or faster) for listenMs. LEDs on draw more current, so A0 sits higher: that is a 1 (and the idle level), LEDs off is a 0. Set the threshold halfway between the lowest and highest readings so far. Decode 1000 baud, 8N1, LSB first (start bit = low, stop bit = high) and reply with every byte decoded, in order, up to 512 bytes. No checking or framing in the box: the app finds the copies and checks their CRC-8 (`parseHello` in `js/station.js`). The app only uses ASK and WAIT when `HELLO` says 0.2 or later; with 0.1 it falls back to a plain SEND hello and picks the drive by hand. `js/sim-station.js` `SimStation` answers ASK like this.
+
+**WAIT, for station 0.2 (to build in the firmware repo):** the app keeps a `WAIT 1000` going whenever it isn't sending, so a drive pops up on screen as soon as it goes in. The aim is under half a second from plug-in to the card.
+1. *Plug-in:* the socket draws almost nothing when empty. A drive is plugged in when A0 stays above the empty level (measure it with `SENSE`) by a set margin for 10 ms; unplugged when it's back at the empty level for 100 ms. A plug-in that happens between two WAITs (or during a SEND) is remembered and reported by the next WAIT, once.
+2. *"You're on a station" signal:* 20 ms after the plug-in, send 15 × `F0` at 1000 baud, 1 stop bit (150 ms of the 100 Hz wake-up square wave). A drive on an ordinary USB port never hears it, so it never flickers there.
+3. *Listen:* straight after, read the answer for 400 ms exactly as ASK does and reply `DRIVE <hex>`.
+
+**What the drive does on plug-in (coretest 1.4, pulsetest 1.1):** for the first 300 ms after power-up, listen for at least 8 dips at 100 Hz. If heard, 20 ms after the line stays full, flicker **3 copies** of the hello answer (same frame as below: `5A`, ID card bytes 5–8, CRC-8; LEDs on = 1, 10 ms of on after each copy, about 0.2 s), then carry on as normal. pulsetest's bootloader already listens for this square wave at power-up as its wake-up call, so it answers from the bootloader, then waits for frames and times out into the routine as usual. The app checks the 3 copies with `parseHello` and takes the one heard most; a drive with no ID card sends `FF FF FF FF`. Drives on older engines say nothing (`DRIVE` alone): the app says so and offers Find (ASK) or picking by hand.
 
 One SEND per frame, as the Pi tool did one `write` + `flush` + `sleep`: e.g. pulsetest's settings plan is `SEND 1000 1 F0F0…(500 bytes) 0`, then `SEND 1000 1 5AA548… 150`, and so on. A 5 s wake-up call is 500 bytes, so it fits in one SEND. Bits are timed by the RP2040's PIO, so USB and the lights can't move them; between SENDs the line rests high for the USB turn-around (0.2–3 ms, like the Pi's flush/sleep wobble).
 
@@ -84,6 +92,6 @@ Core has no divider: the chip reads its own 1.1 V reference against its supply 1
 
 **Station hello (drive → station):** for 3 s all LEDs flicker full white / off. 1000 baud, 8N1, LSB first, LEDs on = 1 (and on between frames), off = 0. Frame: `5A`, ID card bytes 5–8 (family `C`, drive number low, high, board code), CRC-8 of those 4 bytes; then 10 ms of on. Sent 43 times. A drive with no ID card sends `FF FF FF FF`. The station sees it as a change in the current through its transistor (sense wire on A0). The app sends the hello with `ASK 100 2 5AA50104<crc> 3500` (station 0.2 on), takes the answer heard most often, and picks that drive in the list ("Find the drive in the socket"). Station 0.1 can't read it (it only averages A0).
 
-**Pulse (pulsetest 1.1, not written yet):** should answer with exactly the same flicker, so the box and the app need nothing new. Only the hello message pulsetest hears is still to be chosen in the firmware repo; once it is, add its plan next to `coreHelloPlan` and ask with both.
+**Pulse (pulsetest 1.1, not written yet):** introduces itself on plug-in (above), which is all the app needs. A Pulse answer to a station hello sent later is optional; if it's added, choose its message in the firmware repo, add its plan next to `coreHelloPlan` and ask with both.
 
 **EEPROM:** bytes 0–97 settings (from the layout byte), 98–99 their CRC-16. Re-initialising a drive at the Initialisation Station erases EEPROM, so it goes back to the settings in the file it was given.

@@ -5,14 +5,22 @@
 // the trailer lands and everything adds up. SimCoreDrive is coretest 1.3's receiver.
 
 import { crc16 } from './crc.js';
-import { crc8, helloAnswer } from './station.js';
+import { crc8, helloAnswer, PLUG_COPIES } from './station.js';
 import { PULSE, packSettings, unpackSettings } from './engines.js';
 
 const LEN = { 0x48: 36, 0x50: 68, 0x54: 3 }; // H, P, T
 const le16 = (b, i) => b[i] | (b[i + 1] << 8);
 
+// What a drive flickers when it powers up on a station: nothing on today's engines, its ID
+// card (3 copies) on ones that introduce themselves (coretest 1.4, pulsetest 1.1).
+function powerUp(drive) {
+  return drive.announces ? helloAnswer(drive.card, PLUG_COPIES) : new Uint8Array(0);
+}
+
 export class SimDrive {
-  constructor(image) {
+  constructor(image, card = null) {
+    this.card = card;
+    this.announces = false;
     this.pages = new Map(image.pages().map(([p, d]) => [p, Uint8Array.from(d)]));
     this.valid = true;
     this.buf = [];
@@ -21,6 +29,10 @@ export class SimDrive {
     this.tests = 0;
     this.pageWrites = 0;
     this.rejected = 0;
+  }
+
+  powerUp() {
+    return powerUp(this);
   }
 
   feed(bytes) {
@@ -127,6 +139,7 @@ export class SimCoreDrive {
   // card: the 32-byte ID card in the user row, or null for a drive without one.
   constructor(settings, card = null) {
     this.card = card;
+    this.announces = false;
     this.answer = null; // bytes flickered back after the last hello
     this.flash = packSettings('SOTA.LED', settings); // the tagged block in the flashed engine
     this.ee = new Uint8Array(128).fill(0xff); // ATtiny412 EEPROM, erased when initialised
@@ -137,6 +150,10 @@ export class SimCoreDrive {
     this.heard = 0; // messages whose CRC-8 was right
     this.eeWrites = 0;
     this.restarts = 0;
+  }
+
+  powerUp() {
+    return powerUp(this);
   }
 
   feed(bytes) {
@@ -191,7 +208,8 @@ export class SimCoreDrive {
   }
 }
 
-// Same shape as WebSerialTransport, answering like station firmware 0.2 (0.1 has no ASK).
+// Same shape as WebSerialTransport, answering like station firmware 0.2 (0.1 has no ASK or
+// WAIT). plugIn() and unplug() stand in for a hand at the socket.
 export class SimStation {
   constructor(drive = null, { version = '0.2' } = {}) {
     this.drive = drive;
@@ -202,6 +220,28 @@ export class SimStation {
     this.simulated = true;
     this.elapsedMs = 0; // how long the real box would have taken
     this.sends = 0;
+    this.plugged = null; // what a drive said on plug-in, until a WAIT reports it
+    this.waiting = null; // the WAIT in progress: { out, timer }
+  }
+
+  // Someone pushes a drive into the socket (or pulls it out).
+  plugIn(drive) {
+    this.drive = drive;
+    this.plugged = drive.powerUp ? drive.powerUp() : new Uint8Array(0);
+    if (this.waiting) this.reportPlugIn();
+  }
+
+  unplug() {
+    this.drive = null;
+  }
+
+  reportPlugIn() {
+    const { out, timer } = this.waiting;
+    clearTimeout(timer);
+    this.waiting = null;
+    const heard = Array.from(this.plugged, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+    this.plugged = null;
+    out(`DRIVE ${heard}`.trim());
   }
 
   describe() {
@@ -214,9 +254,13 @@ export class SimStation {
 
   async close() {
     this.isOpen = false;
+    if (this.waiting) clearTimeout(this.waiting.timer);
+    this.waiting = null;
   }
 
   async read(n) {
+    // Nothing yet (a WAIT in progress): give the timers a moment, like a real serial read.
+    if (!this.rx.length) await new Promise((r) => setTimeout(r, 2));
     return Uint8Array.from(this.rx.splice(0, n));
   }
 
@@ -239,6 +283,13 @@ export class SimStation {
     if (name === 'HELLO') return out(`SYNAPTO-STATION ${this.version}`);
     if (name === 'SENSE') return out('SENSE 2048 1650');
     if (name === 'SHOW') return out('OK');
+    if (name === 'WAIT' && this.version !== '0.1') {
+      const ms = Number(baud);
+      if (!(ms >= 1 && ms <= 60000)) return out('ERR wait must be 1 to 60000 ms');
+      this.waiting = { out, timer: setTimeout(() => { this.waiting = null; out('NONE'); }, ms) };
+      if (this.plugged) this.reportPlugIn(); // plugged in between two WAITs
+      return;
+    }
     const ask = name === 'ASK' && this.version !== '0.1';
     if (name !== 'SEND' && !ask) return out('ERR unknown command');
     const b = Number(baud), s = Number(stop), g = Number(gap);

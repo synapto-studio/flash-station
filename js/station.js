@@ -158,14 +158,17 @@ export function parseHello(bytes) {
   };
 }
 
-// The bytes a drive with this ID card flickers back (see parseHello).
-export function helloAnswer(card) {
+// The bytes a drive with this ID card flickers back (see parseHello): 43 copies after a
+// station hello, 3 when it introduces itself on plug-in.
+export const HELLO_COPIES = 43;
+export const PLUG_COPIES = 3;
+export function helloAnswer(card, copies = HELLO_COPIES) {
   const id = card ? card.subarray(5, 9) : Uint8Array.of(0xff, 0xff, 0xff, 0xff);
   const one = [0x5a, ...id, crc8(id)];
-  return Uint8Array.from(Array.from({ length: 43 }, () => one).flat());
+  return Uint8Array.from(Array.from({ length: copies }, () => one).flat());
 }
 
-// Station firmware that has ASK (0.2 on) can read a drive's answer.
+// Station firmware that has ASK and WAIT (0.2 on) can read a drive's answer.
 export const canListen = (version) => {
   const v = /^(\d+)\.(\d+)/.exec(version || '');
   return !!v && Number(v[1]) * 1000 + Number(v[2]) >= 2;
@@ -188,6 +191,7 @@ export class Station {
   constructor(transport) {
     this.transport = transport;
     this.version = null;
+    this.queue = Promise.resolve(); // one command at a time: a WAIT and a SEND never overlap
   }
 
   async connect() {
@@ -216,7 +220,13 @@ export class Station {
     throw new StationError('The station stopped answering. Check its USB cable, then connect again.');
   }
 
-  async command(line, timeoutMs = 3000) {
+  command(line, timeoutMs = 3000) {
+    const run = this.queue.then(() => this.exchange(line, timeoutMs));
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  async exchange(line, timeoutMs) {
     // A reply that arrived after an earlier timeout must not be taken as this one's answer.
     if (this.transport.discard) this.transport.discard();
     await this.transport.write(new TextEncoder().encode(`${line}\n`));
@@ -246,6 +256,16 @@ export class Station {
     const wait = stepMs(s) + 3000;
     const reply = await this.command(`ASK ${s.baud} ${s.stopBits} ${hex(s.bytes)} ${s.gapMs}`, wait);
     const m = /^HEARD(?:\s+([0-9A-Fa-f]*))?$/.exec(reply);
+    if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
+    return Uint8Array.from((m[1] || '').match(/../g) || [], (x) => parseInt(x, 16));
+  }
+
+  // Waits up to ms for a drive to be plugged in. Returns null if none was, otherwise the
+  // bytes it flickered when it introduced itself (empty for an engine that doesn't).
+  async wait(ms) {
+    const reply = await this.command(`WAIT ${ms}`, ms + 3000);
+    if (reply === 'NONE') return null;
+    const m = /^DRIVE(?:\s+([0-9A-Fa-f]*))?$/.exec(reply);
     if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
     return Uint8Array.from((m[1] || '').match(/../g) || [], (x) => parseInt(x, 16));
   }

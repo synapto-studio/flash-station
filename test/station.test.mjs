@@ -12,7 +12,7 @@ import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
 import {
   testPlan, patchPlan, fullPlan, planMs, Station, wake,
   crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
-  parseHello, helloAnswer, canListen,
+  parseHello, helloAnswer, canListen, PLUG_COPIES,
 } from '../js/station.js';
 import { encodeCard } from '../js/idcard.js';
 import { SimStation, SimDrive, SimCoreDrive } from '../js/sim-station.js';
@@ -262,6 +262,58 @@ test('ASK with no drive or a Pulse in the socket hears nothing; station 0.1 refu
   assert.equal(canListen('0.10'), true);
   assert.equal(canListen('1.0'), true);
   assert.equal(canListen(null), false);
+});
+
+// ---------------------------------------------------------------- plug-in (station WAIT)
+test('WAIT: a drive that introduces itself is reported with 3 copies of its ID card', async () => {
+  const { st, sim } = await station(null);
+  const drive = new SimCoreDrive(CORE_DEFAULTS, card(31));
+  drive.announces = true;
+  const pending = st.wait(5000);
+  setTimeout(() => sim.plugIn(drive), 20);
+  const t0 = Date.now();
+  const heard = await pending;
+  assert.ok(Date.now() - t0 < 1000, 'reported as soon as it is plugged in');
+  assert.equal(heard.length, PLUG_COPIES * 6);
+  assert.deepEqual(parseHello(heard), { blank: false, copies: 3, number: 31, family: 'core', label: 'C-0031', board: 'Core A' });
+});
+
+test('WAIT: nothing plugged in gives NONE; a plug-in between WAITs is kept for the next one', async () => {
+  const { st, sim } = await station(null);
+  assert.equal(await st.wait(30), null);
+  const pulse = new SimDrive(oldImage(), card(4, 'Pulse A2', 'P'));
+  pulse.announces = true;
+  sim.plugIn(pulse);
+  const r = parseHello(await st.wait(30));
+  assert.equal(r.label, 'P-0004');
+  assert.equal(r.family, 'pulse');
+  assert.equal(await st.wait(30), null, 'reported once');
+});
+
+test("WAIT: a drive on today's engines is reported but says nothing; one with no card says FF FF FF FF", async () => {
+  const { st, sim } = await station(null);
+  sim.plugIn(new SimCoreDrive(CORE_DEFAULTS, card(1)));
+  const quiet = await st.wait(30);
+  assert.equal(quiet.length, 0);
+  assert.equal(parseHello(quiet), null);
+  const blank = new SimCoreDrive(CORE_DEFAULTS, null);
+  blank.announces = true;
+  sim.plugIn(blank);
+  assert.deepEqual(parseHello(await st.wait(30)), { blank: true, copies: 3 });
+});
+
+test('a send asked for during a WAIT goes after it, not into it', async () => {
+  const { st, sim } = await station(null);
+  const drive = new SimCoreDrive(CORE_DEFAULTS, card(2));
+  const waiting = st.wait(60);
+  const sent = st.run(coreTestPlan([1, 2, 3]));
+  sim.drive = drive;
+  assert.equal(await waiting, null);
+  assert.ok((await sent).completed);
+  assert.equal(drive.tests, 3);
+  const old = new Station(new SimStation(null, { version: '0.1' }));
+  await old.connect();
+  await assert.rejects(old.wait(30), /refused/);
 });
 
 test('Core: a damaged copy is dropped by its CRC-8 and the next copy gets through', () => {
