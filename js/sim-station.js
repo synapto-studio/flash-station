@@ -5,7 +5,7 @@
 // the trailer lands and everything adds up. SimCoreDrive is coretest 1.3's receiver.
 
 import { crc16 } from './crc.js';
-import { crc8 } from './station.js';
+import { crc8, helloAnswer } from './station.js';
 import { PULSE, packSettings, unpackSettings } from './engines.js';
 
 const LEN = { 0x48: 36, 0x50: 68, 0x54: 3 }; // H, P, T
@@ -124,7 +124,10 @@ const CORE_SET_LEN = 98;
 const CORE_MSG_MAX = 1 + CORE_SET_LEN + 2;
 
 export class SimCoreDrive {
-  constructor(settings) {
+  // card: the 32-byte ID card in the user row, or null for a drive without one.
+  constructor(settings, card = null) {
+    this.card = card;
+    this.answer = null; // bytes flickered back after the last hello
     this.flash = packSettings('SOTA.LED', settings); // the tagged block in the flashed engine
     this.ee = new Uint8Array(128).fill(0xff); // ATtiny412 EEPROM, erased when initialised
     this.rx = { state: 0, len: 0, pos: 0, crc: 0, msg: [] };
@@ -183,14 +186,16 @@ export class SimCoreDrive {
       this.restarts++;
     } else if (type === 4 && len === 1) {
       this.hellos++;
+      this.answer = helloAnswer(this.card);
     }
   }
 }
 
-// Same shape as WebSerialTransport, answering like station firmware 0.1.
+// Same shape as WebSerialTransport, answering like station firmware 0.2 (0.1 has no ASK).
 export class SimStation {
-  constructor(drive = null) {
+  constructor(drive = null, { version = '0.2' } = {}) {
     this.drive = drive;
+    this.version = version;
     this.rx = [];
     this.line = '';
     this.isOpen = false;
@@ -231,19 +236,26 @@ export class SimStation {
   reply(cmd) {
     const out = (s) => this.rx.push(...new TextEncoder().encode(`${s}\n`));
     const [name, baud, stop, hex, gap] = cmd.split(/\s+/);
-    if (name === 'HELLO') return out('SYNAPTO-STATION 0.1');
+    if (name === 'HELLO') return out(`SYNAPTO-STATION ${this.version}`);
     if (name === 'SENSE') return out('SENSE 2048 1650');
     if (name === 'SHOW') return out('OK');
-    if (name !== 'SEND') return out('ERR unknown command');
+    const ask = name === 'ASK' && this.version !== '0.1';
+    if (name !== 'SEND' && !ask) return out('ERR unknown command');
     const b = Number(baud), s = Number(stop), g = Number(gap);
     if (!(b >= 70 && b <= 20000)) return out('ERR baud must be 70 to 20000');
     if (s !== 1 && s !== 2) return out('ERR stop bits must be 1 or 2');
     if (!/^([0-9a-fA-F]{2}){1,4096}$/.test(hex || '')) return out('ERR hex must be 1 to 4096 bytes');
     if (!(g >= 0 && g <= 60000)) return out('ERR gap must be 0 to 60000 ms');
     const bytes = Uint8Array.from(hex.match(/../g), (x) => parseInt(x, 16));
-    if (this.drive) this.drive.feed(bytes);
+    if (this.drive) {
+      this.drive.answer = null;
+      this.drive.feed(bytes);
+    }
     this.elapsedMs += (bytes.length * (9 + s) * 1000) / b + g;
     this.sends++;
-    out('OK');
+    if (!ask) return out('OK');
+    // 43 copies take 3 s: a shorter listen hears only the copies that fit.
+    const heard = Array.from((this.drive && this.drive.answer) || []).slice(0, Math.max(0, (g - 500) / 10)); // 10 ms a byte, after ~0.5 s
+    out(`HEARD ${heard.map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase()}`.trim());
   }
 }

@@ -12,7 +12,9 @@ import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
 import {
   testPlan, patchPlan, fullPlan, planMs, Station, wake,
   crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
+  parseHello, helloAnswer, canListen,
 } from '../js/station.js';
+import { encodeCard } from '../js/idcard.js';
 import { SimStation, SimDrive, SimCoreDrive } from '../js/sim-station.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +61,7 @@ async function station(drive) {
 
 test('station: HELLO, bad commands and bad SENDs are explained', async () => {
   const { st } = await station(null);
-  assert.equal(st.version, '0.1');
+  assert.equal(st.version, '0.2');
   await assert.rejects(st.command('NOPE'), /refused/);
   await assert.rejects(st.command('SEND 5 1 AA 0'), /baud/);
   const queue = [...Buffer.from('HELLO\n')];
@@ -211,6 +213,55 @@ test('Core settings send: saved once in EEPROM, the same again writes nothing, f
   assert.equal(drive.eeWrites, 2, 'forget writes once; the later copies find nothing to forget');
   await st.run(coreHelloPlan());
   assert.equal(drive.hellos, 1);
+});
+
+// ---------------------------------------------------------------- station hello answer
+const card = (number, board = 'Core A', family = 'C') => encodeCard({ family, number, board });
+
+test('hello answer: 43 copies of 5A + ID card bytes 5-8 + CRC-8, read back as the drive', () => {
+  const a = helloAnswer(card(258));
+  assert.equal(a.length, 43 * 6);
+  const one = [0x5a, 0x43, 0x02, 0x01, 0x10];
+  assert.equal(hex(a.subarray(0, 6)), hex([...one, crc8(one.slice(1))]));
+  assert.deepEqual(parseHello(a), { blank: false, copies: 43, number: 258, family: 'core', label: 'C-0258', board: 'Core A' });
+  assert.deepEqual(parseHello(helloAnswer(null)), { blank: true, copies: 43 });
+  assert.equal(parseHello(new Uint8Array(0)), null);
+  assert.equal(parseHello(Uint8Array.of(0x5a, 0x43, 1, 0, 0x10, 0)), null, 'a bad CRC-8 is not an answer');
+});
+
+test('hello answer: noise and damaged copies are skipped, the copy heard most wins', () => {
+  const good = helloAnswer(card(7));
+  const noisy = Uint8Array.from([0x00, 0x5a, 0x5a, 0x13, ...good]);
+  for (let i = 0; i < noisy.length; i += 17) noisy[i] ^= 0x08; // flipped bits here and there
+  const r = parseHello(noisy);
+  assert.equal(r.label, 'C-0007');
+  assert.ok(r.copies > 20 && r.copies < 43, `${r.copies} copies`);
+});
+
+test('station 0.2 ASK: the simulated Core answers a hello with its ID card', async () => {
+  const drive = new SimCoreDrive(CORE_DEFAULTS, card(12, 'Core B'));
+  const { st, sim } = await station(drive);
+  assert.equal(st.version, '0.2');
+  assert.ok(canListen(st.version));
+  const heard = await st.ask(coreHelloPlan()[0]);
+  assert.equal(drive.hellos, 1);
+  assert.equal(heard.length, 43 * 6, 'the 3.5 s listen hears all 3 s of the answer');
+  assert.deepEqual(parseHello(heard), { blank: false, copies: 43, number: 12, family: 'core', label: 'C-0012', board: 'Core B' });
+  assert.ok(sim.elapsedMs > 4000 && sim.elapsedMs < 4500, 'about 4 s: 0.55 s of hello, 3.5 s of listening');
+  // A settings message is not a hello: nothing comes back.
+  assert.equal((await st.ask(coreForgetPlan()[0])).length, 0);
+});
+
+test('ASK with no drive or a Pulse in the socket hears nothing; station 0.1 refuses ASK', async () => {
+  assert.equal(parseHello(await (await station(null)).st.ask(coreHelloPlan()[0])), null);
+  assert.equal(parseHello(await (await station(new SimDrive(oldImage()))).st.ask(coreHelloPlan()[0])), null);
+  const old = new Station(new SimStation(null, { version: '0.1' }));
+  await old.connect();
+  assert.equal(canListen(old.version), false);
+  await assert.rejects(old.ask(coreHelloPlan()[0]), /refused/);
+  assert.equal(canListen('0.10'), true);
+  assert.equal(canListen('1.0'), true);
+  assert.equal(canListen(null), false);
 });
 
 test('Core: a damaged copy is dropped by its CRC-8 and the next copy gets through', () => {

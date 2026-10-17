@@ -1,12 +1,14 @@
 // The Flash Station tab: connect the box, pick the drive, send a link test, new settings or
 // a whole engine (Pulse), or a link test, new settings, forget or hello (Core), and log
-// every send in the drive's history.
+// every send in the drive's history. With station 0.2 or later, "Find the drive" asks the
+// drive in the socket for its ID card and picks it in the list.
 
 import { PulseImage } from './engines.js';
 import {
   Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
-  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
+  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen,
 } from './station.js';
+import { encodeCard } from './idcard.js';
 import { SimStation, SimDrive, SimCoreDrive } from './sim-station.js';
 import { WebSerialTransport, webSerialSupported } from './serial.js';
 import { Library, MemoryStore, resolveRoutine } from './library.js';
@@ -77,12 +79,19 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     off($('fsEngineSend'), lim.engine);
     off($('fsForget'), lim.forget);
     off($('fsHello'), lim.hello);
+    const listens = !!fs.station && canListen(fs.station.version);
     $('fsEngineSend').hidden = core;
-    $('fsForget').hidden = $('fsHello').hidden = !core;
+    $('fsForget').hidden = !core;
+    $('fsHello').hidden = !core || listens; // Find does the hello and reads the answer
+    $('fsFind').hidden = !fs.station;
+    $('fsFind').disabled = fs.busy || !listens;
+    if (fs.station && !listens) {
+      $('fsFindNote').textContent = `Station firmware ${fs.station.version} can't read a drive's answer. Update the box to station 0.2 to find drives, or pick the drive by hand.`;
+    }
     $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
     $('fsSettings').textContent = `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
-    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim']) $(id).disabled = fs.busy;
+    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
     const why = lim.all || lim.settings || (core ? '' : lim.engine) || '';
     $('fsEngineNote').textContent = why;
@@ -151,6 +160,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const st = new Station(transport);
     await st.connect();
     fs.station = st;
+    $('fsFindNote').textContent = '';
     $('fsStatus').textContent = `${label} connected: station firmware ${st.version}.`;
     log(`Station: ${label}, firmware ${st.version}`);
     refresh();
@@ -286,9 +296,11 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   }
 
   // A simulated Core: its flash holds the settings it was initialised with, its EEPROM the
-  // ones sent since (if any), as the register says.
+  // ones sent since (if any), its user row the ID card, as the register says.
   function simCoreDrive(drive, engine) {
-    const sim = new SimCoreDrive(drive.flashedSettings || drive.settings || engine.defaults);
+    let card = null;
+    try { card = encodeCard({ family: 'C', number: drive.number, board: drive.board }); } catch {}
+    const sim = new SimCoreDrive(drive.flashedSettings || drive.settings || engine.defaults, card);
     if (drive.flashedSettings && drive.settings) sim.feed(coreSettingsPlan(drive.settings)[0].bytes);
     sim.eeWrites = sim.restarts = sim.heard = 0;
     return sim;
@@ -324,9 +336,65 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
 
   $('fsHello').addEventListener('click', () =>
     go('Station hello', async () => ({ plan: coreHelloPlan() }), {
-      done: 'The drive should have flickered white for 3 s. The station can\'t read the answer yet.',
+      done: 'The drive should have flickered white for 3 s. This station firmware can\'t read the answer; station 0.2 can.',
       stopped: 'Nothing was saved.',
     }));
+
+  // ------------------------------------------------------------ finding the drive in the socket
+  // One station hello; the drive flickers its ID back, the box reads it on the sense wire and
+  // the drive is picked in the list. Only Core (coretest 1.3 on) answers so far.
+  async function findDrive() {
+    if (fs.busy) return;
+    fs.busy = true;
+    refreshButtons();
+    const note = (t) => { $('fsFindNote').textContent = t; };
+    note('Asking the drive in the socket who it is. Keep it in the socket…');
+    let found = null, result;
+    try {
+      if (fs.station.transport.simulated) {
+        // The simulated socket holds the Core picked in the list, or the first one.
+        const d = sendable().find((x) => x.family === 'core' && x.drive === $('fsDrive').value) || sendable().find((x) => x.family === 'core');
+        fs.station.transport.drive = d ? simCoreDrive(d, state.demo.find((x) => x.kind === 'coretest')) : null;
+      }
+      const heard = parseHello(await fs.station.ask(coreHelloPlan()[0]));
+      if (!heard) {
+        result = 'No answer';
+        note('No answer. Push the drive all the way into the socket and try again. Only Core drives on coretest 1.3 or later answer so far; for a Pulse, pick it in the list.');
+      } else if (heard.blank) {
+        result = 'A drive with no ID card';
+        note('A drive answered, but it has no ID card. Give it one at the Initialisation Station.');
+      } else {
+        found = state.drives.find((d) => d.drive === heard.label) || null;
+        result = `Found ${heard.label}`;
+        if (found) {
+          $('fsDrive').value = found.drive;
+          remember(found.drive);
+          note(`Found ${heard.label} (${heard.board}). It's picked in the list.`);
+        } else {
+          note(`Found ${heard.label} (${heard.board}), but it isn't in this library's register. Choose the library folder it was initialised with.`);
+        }
+      }
+    } catch (e) {
+      result = `Failed: ${e.message}`;
+      note(`Couldn't ask the drive. ${e.message}`);
+      if (e instanceof StationError) $('fsStatus').textContent = e.message;
+    }
+    log(`Find the drive: ${result}`);
+    if (found && state.library) {
+      try {
+        const date = new Date().toISOString();
+        found.history = [...(found.history || []), { date, station: 'Flash Station', action: 'Station hello', engine: found.engine ? found.engine.label : '', result }];
+        found.updated = date;
+        await state.library.saveDrive(found);
+      } catch (e) {
+        log(`Couldn't write the drive's history: ${e.message}`);
+      }
+    }
+    fs.busy = false;
+    refresh();
+  }
+
+  $('fsFind').addEventListener('click', findDrive);
 
   $('fsEngineSend').addEventListener('click', () => {
     if (!window.confirm('Send the whole engine? It takes 3 to 6 minutes. Keep the drive in the socket the whole time.')) return;
