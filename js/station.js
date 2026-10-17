@@ -1,12 +1,13 @@
-// The Flash Station (the XIAO box): frames and plans for a pulsetest drive, and the client
-// that sends them through the box's USB serial commands. Formats are in
-// docs/STATION-PROTOCOL.md; test/ref_pulse_station.py builds the same bytes independently.
+// The Flash Station (the XIAO box): frames and plans for pulsetest and coretest drives, and
+// the client that sends them through the box's USB serial commands. Formats are in
+// docs/STATION-PROTOCOL.md; test/ref_pulse_station.py builds the same pulsetest bytes
+// independently.
 //
 // A plan is a list of steps { bytes, gapMs, baud, stopBits, note }. Each step is one SEND:
 // the box dips the drive's 5 V for the bits, then holds full supply for gapMs.
 
 import { crc16 } from './crc.js';
-import { PULSE } from './engines.js';
+import { PULSE, packSettings } from './engines.js';
 
 export const BAUD = 1000;
 const TEST_REPEATS = 110; // 0.1 s gaps + 80 ms a frame: about 20 s
@@ -49,7 +50,7 @@ export function testFrame(r, g, b) {
 }
 
 // ---------------------------------------------------------------- plans
-const step = (bytes, gapMs = 0, note = '') => ({ bytes, gapMs, baud: BAUD, stopBits: 1, note });
+const step = (bytes, gapMs = 0, note = '', baud = BAUD, stopBits = 1) => ({ bytes, gapMs, baud, stopBits, note });
 
 export function testPlan([r, g, b]) {
   const f = testFrame(r, g, b);
@@ -87,6 +88,46 @@ export function fullPlan(img) {
   }
   return steps;
 }
+
+// ---------------------------------------------------------------- coretest (Core)
+// coretest 1.3's receiver: 100 baud, 2 stop bits, no wake-up call. A message is
+// 5A A5 len payload crc8, sent 3 times with 300 ms gaps (one SEND a copy).
+export const CORE_BAUD = 100;
+const CORE_COPIES = 3;
+const CORE_GAP_MS = 300;
+const CORE_LAYOUT = 1; // the SOTA.LED layout coretest 1.3's receiver takes
+
+// CRC-8, polynomial 0x07, start 0.
+export function crc8(bytes, c = 0) {
+  for (const b of bytes) {
+    c ^= b;
+    for (let i = 0; i < 8; i++) c = c & 0x80 ? ((c << 1) ^ 0x07) & 0xff : (c << 1) & 0xff;
+  }
+  return c;
+}
+
+export function coreMessage(payload) {
+  const body = Uint8Array.from([payload.length, ...payload]);
+  return Uint8Array.from([0x5a, 0xa5, ...body, crc8(body)]);
+}
+
+// 02 + the SOTA.LED block from its layout byte on (98 bytes) + their CRC-16, low byte first.
+export function coreSettingsPayload(settings) {
+  const block = packSettings('SOTA.LED', settings).subarray(8);
+  if (block[0] !== CORE_LAYOUT) throw new Error(`These settings use layout ${block[0]}; coretest 1.3 takes layout ${CORE_LAYOUT} only.`);
+  const c = crc16(block);
+  return Uint8Array.from([0x02, ...block, c & 0xff, c >> 8]);
+}
+
+const coreStep = (bytes, gapMs, note) => step(bytes, gapMs, note, CORE_BAUD, 2);
+const coreCopies = (msg, note) =>
+  Array.from({ length: CORE_COPIES }, (_, i) => coreStep(msg, CORE_GAP_MS, `${note}, copy ${i + 1} of ${CORE_COPIES}`));
+
+export const coreTestPlan = ([r, g, b]) => coreCopies(coreMessage([0x01, r, g, b]), 'Link test');
+export const coreSettingsPlan = (settings) => coreCopies(coreMessage(coreSettingsPayload(settings)), 'Settings');
+export const coreForgetPlan = () => coreCopies(coreMessage([0x03, 0x5a]), 'Forget sent settings');
+// Sent once; the long gap keeps the line full while the drive flickers its answer (3 s).
+export const coreHelloPlan = () => [coreStep(coreMessage([0x04]), 3500, 'Station hello')];
 
 export const stepMs = (s) => Math.round((s.bytes.length * (9 + s.stopBits) * 1000) / s.baud) + s.gapMs;
 export const planMs = (plan) => plan.reduce((n, s) => n + stepMs(s), 0);

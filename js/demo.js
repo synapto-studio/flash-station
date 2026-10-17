@@ -41,7 +41,7 @@ export function demoEngines() {
   app.forEach((b, i) => pulse.set(0x0c00 + i, b));
 
   return [
-    readEngine(core, 'demo_coretest_1.2_10mhz.hex'),
+    readEngine(core, 'demo_coretest_1.3_10mhz.hex'),
     readEngine(pulse, 'demo_pulsetest_1.0_full.hex'),
   ].map((e) => ({ ...e, demo: true, label: `${e.label} (demo)` }));
 }
