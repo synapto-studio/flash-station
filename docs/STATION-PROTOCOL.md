@@ -14,12 +14,12 @@ socket GND (black) ── 10 kΩ ───────────────�
 The 10 kΩ protects A0 if the diode is ever fitted backwards. Status LEDs (2 white on D4/D5, 2 RGB on D1–D3 and D10–D8) are in the firmware repo's `station/README.md`.
 Line idle (high) = transistor on = full 5 V. A 0 bit = transistor off = dip. Same as the Pi's pin 8 in the old guides.
 
-## Station commands (firmware station 0.1)
+## Station commands (firmware station 0.2)
 USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 
 | Send | Reply |
 | --- | --- |
-| `HELLO` | `SYNAPTO-STATION 0.1` |
+| `HELLO` | `SYNAPTO-STATION 0.2` (0.1 has no ASK or WAIT) |
 | `SEND <baud> <stopbits> <hex> <gapMs>` | `OK` after the last stop bit has gone and the line has then been held at full supply for gapMs (plus about one bit). Baud 70–20000, stop bits 1–2, 1–4096 bytes (hex, either case), gap 0–60000 |
 | `SENSE` | `SENSE <raw 0-4095> <millivolts>` on A0 (average of 64) |
 | `SHOW` | `OK` (replays the station's start-up light show) |
@@ -27,14 +27,23 @@ USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 | `WAIT <ms>` (station 0.2) | `DRIVE <hex>` as soon as a drive is plugged in (`DRIVE` alone if it said nothing), or `NONE` after ms (1–60000) with no plug-in |
 | anything wrong | `ERR <what to fix>` |
 
-**ASK, for station 0.2 (to build in the firmware repo):** after the last stop bit, sample A0 at least 8 times a bit (8 kHz or faster) for listenMs. LEDs on draw more current, so A0 sits higher: that is a 1 (and the idle level), LEDs off is a 0. Set the threshold halfway between the lowest and highest readings so far. Decode 1000 baud, 8N1, LSB first (start bit = low, stop bit = high) and reply with every byte decoded, in order, up to 512 bytes. No checking or framing in the box: the app finds the copies and checks their CRC-8 (`parseHello` in `js/station.js`). The app only uses ASK and WAIT when `HELLO` says 0.2 or later; with 0.1 it falls back to a plain SEND hello and picks the drive by hand. `js/sim-station.js` `SimStation` answers ASK like this.
+**How the box listens (station 0.2, built 17 Oct 2026, simulated only; firmware repo `station/README.md`):** the ADC reads A0 10,000 times a second on its own (10 readings a bit). LEDs on draw more current, so A0 sits higher: that is a 1 (and the idle level), LEDs off is a 0. Readings are averaged in fours; the threshold sits halfway between the lowest and highest averages so far, with an eighth of that as hysteresis, and nothing is decoded until they are at least 16 counts (13 mV) apart. Each byte is 1000 baud 8N1, LSB first; each bit is the majority of 3 readings around its middle; a byte whose stop bit isn't 1 is dropped. The reply holds every byte decoded, in order, up to 512. The box doesn't check the copies: the app does (`parseHello` in `js/station.js`). The app only uses ASK and WAIT when `HELLO` says 0.2 or later; with 0.1 it falls back to a plain SEND hello and picks the drive by hand. `js/sim-station.js` `SimStation` answers like station 0.2.
 
-**WAIT, for station 0.2 (to build in the firmware repo):** the app keeps a `WAIT 1000` going whenever it isn't sending, so a drive pops up on screen as soon as it goes in. The aim is under half a second from plug-in to the card.
-1. *Plug-in:* the socket draws almost nothing when empty. A drive is plugged in when A0 stays above the empty level (measure it with `SENSE`) by a set margin for 10 ms; unplugged when it's back at the empty level for 100 ms. A plug-in that happens between two WAITs (or during a SEND) is remembered and reported by the next WAIT, once.
-2. *"You're on a station" signal:* 20 ms after the plug-in, send 15 × `F0` at 1000 baud, 1 stop bit (150 ms of the 100 Hz wake-up square wave). A drive on an ordinary USB port never hears it, so it never flickers there.
-3. *Listen:* straight after, read the answer for 400 ms exactly as ASK does and reply `DRIVE <hex>`.
+**ASK:** sends like SEND, then listens straight after the last stop bit (one bit later) for listenMs and replies `HEARD <hex>`. For the Core hello (`ASK 100 2 5AA5010409 3500`) the drive has already started answering by then, so the first of its 43 copies is usually cut short: expect 42.
 
-**What the drive does on plug-in (coretest 1.4, pulsetest 1.1):** for the first 300 ms after power-up, listen for at least 8 dips at 100 Hz. If heard, 20 ms after the line stays full, flicker **3 copies** of the hello answer (same frame as below: `5A`, ID card bytes 5–8, CRC-8; LEDs on = 1, 10 ms of on after each copy, about 0.2 s), then carry on as normal. pulsetest's bootloader already listens for this square wave at power-up as its wake-up call, so it answers from the bootloader, then waits for frames and times out into the routine as usual. The app checks the 3 copies with `parseHello` and takes the one heard most; a drive with no ID card sends `FF FF FF FF`. Drives on older engines say nothing (`DRIVE` alone): the app says so and offers Find (ASK) or picking by hand.
+**WAIT:** the app keeps a `WAIT 1000` going whenever it isn't sending. The box watches A0 every millisecond, between commands as well as during WAIT:
+| After plug-in | What the box does |
+| --- | --- |
+| 10 ms | A0 has stayed more than `PLUG_MARGIN` (8 counts) above the empty level for 10 ms: a drive is in. The empty level is learnt as a slow average while the socket is empty |
+| 30 ms | The "you're on a station" signal: 15 × `F0` at 1000 baud, 1 stop bit (150 ms of the 100 Hz wake-up square wave). A drive on an ordinary USB port never hears it |
+| 180 ms | Listens up to 400 ms like ASK, stopping as soon as 3 good copies of an ID are in |
+| ~0.4 s | Kept until a WAIT reports it, once (`DRIVE <hex>`; `DRIVE` alone if nothing was heard). Box flashes green if it heard an ID, blinks red if not |
+
+A drive counts as gone only after 0.5 s near the empty level, so a drive whose LEDs go dark for a moment isn't "plugged in" again (the signal restarts a running Pulse). A plug-in during a SEND or ASK, or within 1 s after one, isn't introduced: the app is already talking to that drive. `PLUG_MARGIN` and the 16-count swing are guesses until the bench readings (`SENSE` with the socket empty, a drive in and dark, a drive lit).
+
+**What the drive does on plug-in (coretest 1.4, pulsetest 1.1; not written yet):** for the first 300 ms after power-up, listen for at least 8 dips at 100 Hz. If heard, 20 ms after the line stays full, light the LEDs; 10 ms later flicker **3 copies** of the hello answer (same frame as below: `5A`, ID card bytes 5–8, CRC-8; LEDs on = 1, 10 ms of on after each copy, about 0.2 s), then carry on as normal. pulsetest's bootloader already listens for this square wave at power-up as its wake-up call, so it answers from the bootloader, then waits for frames and times out into the routine as usual. The app checks the 3 copies with `parseHello` and takes the one heard most; a drive with no ID card sends `FF FF FF FF`.
+
+**Drives on today's engines with station 0.2:** they say nothing (`DRIVE` alone): the app says so and offers Find (ASK) or picking by hand. A Core on coretest 1.3 ignores the signal. A Pulse on pulsetest 1.0 takes it for the station calling: its bootloader lights red, waits about 1.5 s for frames and then starts the routine (simulated: 1.7 s after plug-in, flash untouched).
 
 One SEND per frame, as the Pi tool did one `write` + `flush` + `sleep`: e.g. pulsetest's settings plan is `SEND 1000 1 F0F0…(500 bytes) 0`, then `SEND 1000 1 5AA548… 150`, and so on. A 5 s wake-up call is 500 bytes, so it fits in one SEND. Bits are timed by the RP2040's PIO, so USB and the lights can't move them; between SENDs the line rests high for the USB turn-around (0.2–3 ms, like the Pi's flush/sleep wobble).
 

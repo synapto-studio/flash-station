@@ -52,10 +52,10 @@ Done when: a routine built in the editor initialises a simulated board and the p
 ### 5. Drive introduces itself on plug-in — app side DONE 17 Oct 2026
 Plug a drive into the Flash Station and its card pops up on screen within half a second, with no click. The drive flickers its ID (family, drive number, board: ID card bytes 5–8) 3 times when the station tells it it's on a station; the box reads it on A0; the app looks the label up in the register and shows the card. App side: DONE (see Done above). Later, the card's drawing becomes a render or 3D model of the drive (see Later).
 Left, all in the private firmware repo (specs in `docs/STATION-PROTOCOL.md`, under the command table):
-- **Station 0.2:** `WAIT` (plug-in detection, the "you're on a station" signal, listen) and `ASK`; `HELLO` says `SYNAPTO-STATION 0.2`. Test in simulation with a made-up A0 trace of `helloAnswer(card, 3)` bytes.
+- [x] **Station 0.2** (17 Oct 2026, firmware repo branch `claude/roadmap-task-5-737ei4`, simulated only): `WAIT` and `ASK` as in `docs/STATION-PROTOCOL.md`. On the emulated RP2040 with a modelled drive, `DRIVE` with all 3 ID copies comes back 0.40 s after plug-in; the hello `ASK` hears 42 of 43 copies. Left: flash `station_0.2.uf2` and take the bench readings in the firmware repo's `station/README.md`.
 - **coretest 1.4 (Core):** listen for the signal for 300 ms after power-up, then flicker 3 copies of the ID.
 - **pulsetest 1.1 (Pulse):** the same, from the bootloader's power-up listen.
-- **Bench check:** station 0.2 connected, Flash Station tab open, plug in a Core on coretest 1.4. Expect its card, tagged "Just plugged in", in under a second. If the note says it "didn't say who it is", copy the Log and run `SENSE` with the drive's LEDs on and off to see how far apart A0 is.
+- **Bench check:** first, with station 0.2 on the box, `SENSE` readings (socket empty, a drive in and dark, a drive lit) to set the box's two A0 settings. Then a Core on coretest 1.3 in the socket, Flash Station tab → Find the drive: expect "Found C-000N". Once coretest 1.4 exists: plug it in with the tab open and expect its card, tagged "Just plugged in", in under a second. If the note says it "didn't say who it is", copy the Log and run `SENSE` with the drive's LEDs on and off to see how far apart A0 is.
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
