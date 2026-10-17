@@ -145,10 +145,26 @@
         <p class="note" id="fsStatus">Plug the XIAO station box into the computer, then choose its port.</p>
 
         <h2>2 · Drive</h2>
+        <div class="fs-card" id="fsCard" hidden aria-live="polite">
+          <svg class="drive-art" id="fsCardArt" role="img" aria-label="Drawing of the drive"></svg>
+          <div>
+            <p class="fs-card-tag" id="fsCardTag">Picked in the list</p>
+            <p class="fs-card-label" id="fsCardLabel"></p>
+            <dl class="fs-card-facts" id="fsCardFacts"></dl>
+          </div>
+        </div>
         <label class="field">Drive in the socket
           <select id="fsDrive"></select>
         </label>
         <p class="note" id="fsDriveNote"></p>
+        <div class="row">
+          <button type="button" class="btn" id="fsFind" hidden>Find the drive in the socket (about 5 s)</button>
+        </div>
+        <p class="note" id="fsFindNote" aria-live="polite"></p>
+        <div class="row fs-sim-socket" id="fsSimSocket" hidden>
+          <label class="inline">Simulated socket <select id="fsSimDrive"></select></label>
+          <button type="button" class="btn quiet" id="fsPlug">Plug it in</button>
+        </div>
 
         <h2>3 · Engine and lighting</h2>
         <label class="field">Engine

@@ -224,6 +224,19 @@ details.small > *:not(summary) { margin-top: 10px; }
 .fs-meter span { transition: width 0.1s linear; }
 .fs .inline { white-space: nowrap; }
 .fs input[type='color'] { width: 44px; height: 34px; padding: 2px; background: var(--shell-2); border: 1px solid var(--edge); border-radius: 6px; }
+.fs-card { display: grid; grid-template-columns: 110px 1fr; gap: 20px; align-items: center; background: var(--shell); border: 1px solid var(--edge); border-radius: 12px; padding: 16px 20px; margin: 0 0 16px; max-width: 620px; }
+.fs-card[data-fresh] { border-color: var(--resin); box-shadow: 0 0 0 4px color-mix(in srgb, var(--resin) 15%, transparent); animation: card-in 0.25s ease-out; }
+.fs-card .drive-art { max-width: 110px; margin: 0; }
+.fs-card-tag { margin: 0; color: var(--muted); font: 600 14px/1.2 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; }
+.fs-card[data-fresh] .fs-card-tag { color: var(--resin); }
+.fs-card-label { margin: 2px 0 8px; font: 700 40px/1 var(--cond); }
+.fs-card-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; font-size: 15px; }
+.fs-card-facts dt { color: var(--muted); }
+.fs-card-facts dd { margin: 0; }
+.fs .fs-sim-socket .inline { white-space: normal; flex-wrap: wrap; max-width: 100%; }
+.fs-sim-socket select { max-width: 100%; }
+@keyframes card-in { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 520px) { .fs-card { grid-template-columns: 72px 1fr; gap: 14px; padding: 14px; } .fs-card .drive-art { max-width: 72px; } .fs-card-label { font-size: 32px; } }
 
 /* routines preview */
 .rt-stage { background: #121010; border: 1px solid var(--edge); border-radius: 12px; padding: 24px 16px 12px; margin: 16px 0; }

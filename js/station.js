@@ -8,6 +8,7 @@
 
 import { crc16 } from './crc.js';
 import { PULSE, packSettings } from './engines.js';
+import { BOARDS, driveLabel } from './idcard.js';
 
 export const BAUD = 1000;
 const TEST_REPEATS = 110; // 0.1 s gaps + 80 ms a frame: about 20 s
@@ -129,6 +130,50 @@ export const coreForgetPlan = () => coreCopies(coreMessage([0x03, 0x5a]), 'Forge
 // Sent once; the long gap keeps the line full while the drive flickers its answer (3 s).
 export const coreHelloPlan = () => [coreStep(coreMessage([0x04]), 3500, 'Station hello')];
 
+// ---------------------------------------------------------------- station hello (drive → station)
+// The drive flickers its LEDs at 1000 baud, 8N1: 5A, ID card bytes 5-8 (family, drive number
+// low, high, board code), CRC-8 of those 4 bytes; 43 copies in 3 s. The station turns the
+// flicker back into bytes (ASK); the app finds the copies here and takes the one heard most.
+export function parseHello(bytes) {
+  const seen = new Map();
+  for (let i = 0; i + 5 < bytes.length; i++) {
+    if (bytes[i] !== 0x5a) continue;
+    const id = bytes.slice(i + 1, i + 5);
+    if (crc8(id) !== bytes[i + 5]) continue;
+    const key = hex(id);
+    seen.set(key, (seen.get(key) || 0) + 1);
+    i += 5;
+  }
+  if (!seen.size) return null;
+  const [key, copies] = [...seen].sort((a, b) => b[1] - a[1])[0];
+  const id = Uint8Array.from(key.match(/../g), (x) => parseInt(x, 16));
+  if (id.every((b) => b === 0xff)) return { blank: true, copies };
+  const family = String.fromCharCode(id[0]);
+  const number = id[1] | (id[2] << 8);
+  return {
+    blank: false, copies, number,
+    family: { C: 'core', P: 'pulse' }[family] || family,
+    label: driveLabel(family, number),
+    board: BOARDS[id[3]] ? BOARDS[id[3]].code : `board ${id[3]}`,
+  };
+}
+
+// The bytes a drive with this ID card flickers back (see parseHello): 43 copies after a
+// station hello, 3 when it introduces itself on plug-in.
+export const HELLO_COPIES = 43;
+export const PLUG_COPIES = 3;
+export function helloAnswer(card, copies = HELLO_COPIES) {
+  const id = card ? card.subarray(5, 9) : Uint8Array.of(0xff, 0xff, 0xff, 0xff);
+  const one = [0x5a, ...id, crc8(id)];
+  return Uint8Array.from(Array.from({ length: copies }, () => one).flat());
+}
+
+// Station firmware that has ASK and WAIT (0.2 on) can read a drive's answer.
+export const canListen = (version) => {
+  const v = /^(\d+)\.(\d+)/.exec(version || '');
+  return !!v && Number(v[1]) * 1000 + Number(v[2]) >= 2;
+};
+
 export const stepMs = (s) => Math.round((s.bytes.length * (9 + s.stopBits) * 1000) / s.baud) + s.gapMs;
 export const planMs = (plan) => plan.reduce((n, s) => n + stepMs(s), 0);
 
@@ -146,6 +191,7 @@ export class Station {
   constructor(transport) {
     this.transport = transport;
     this.version = null;
+    this.queue = Promise.resolve(); // one command at a time: a WAIT and a SEND never overlap
   }
 
   async connect() {
@@ -174,7 +220,13 @@ export class Station {
     throw new StationError('The station stopped answering. Check its USB cable, then connect again.');
   }
 
-  async command(line, timeoutMs = 3000) {
+  command(line, timeoutMs = 3000) {
+    const run = this.queue.then(() => this.exchange(line, timeoutMs));
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  async exchange(line, timeoutMs) {
     // A reply that arrived after an earlier timeout must not be taken as this one's answer.
     if (this.transport.discard) this.transport.discard();
     await this.transport.write(new TextEncoder().encode(`${line}\n`));
@@ -196,6 +248,26 @@ export class Station {
     const wait = stepMs(s) + 3000;
     const reply = await this.command(`SEND ${s.baud} ${s.stopBits} ${hex(s.bytes)} ${s.gapMs}`, wait);
     if (reply !== 'OK') throw new StationError(`Unexpected answer from the station: ${reply}`);
+  }
+
+  // Sends one step like send(), but listens on the sense wire during its gap and returns the
+  // bytes the drive flickered back (empty if it said nothing).
+  async ask(s) {
+    const wait = stepMs(s) + 3000;
+    const reply = await this.command(`ASK ${s.baud} ${s.stopBits} ${hex(s.bytes)} ${s.gapMs}`, wait);
+    const m = /^HEARD(?:\s+([0-9A-Fa-f]*))?$/.exec(reply);
+    if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
+    return Uint8Array.from((m[1] || '').match(/../g) || [], (x) => parseInt(x, 16));
+  }
+
+  // Waits up to ms for a drive to be plugged in. Returns null if none was, otherwise the
+  // bytes it flickered when it introduced itself (empty for an engine that doesn't).
+  async wait(ms) {
+    const reply = await this.command(`WAIT ${ms}`, ms + 3000);
+    if (reply === 'NONE') return null;
+    const m = /^DRIVE(?:\s+([0-9A-Fa-f]*))?$/.exec(reply);
+    if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
+    return Uint8Array.from((m[1] || '').match(/../g) || [], (x) => parseInt(x, 16));
   }
 
   // Sends every step in order. Stopping happens between steps; the line then rests at full

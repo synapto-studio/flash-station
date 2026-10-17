@@ -5,14 +5,22 @@
 // the trailer lands and everything adds up. SimCoreDrive is coretest 1.3's receiver.
 
 import { crc16 } from './crc.js';
-import { crc8 } from './station.js';
+import { crc8, helloAnswer, PLUG_COPIES } from './station.js';
 import { PULSE, packSettings, unpackSettings } from './engines.js';
 
 const LEN = { 0x48: 36, 0x50: 68, 0x54: 3 }; // H, P, T
 const le16 = (b, i) => b[i] | (b[i + 1] << 8);
 
+// What a drive flickers when it powers up on a station: nothing on today's engines, its ID
+// card (3 copies) on ones that introduce themselves (coretest 1.4, pulsetest 1.1).
+function powerUp(drive) {
+  return drive.announces ? helloAnswer(drive.card, PLUG_COPIES) : new Uint8Array(0);
+}
+
 export class SimDrive {
-  constructor(image) {
+  constructor(image, card = null) {
+    this.card = card;
+    this.announces = false;
     this.pages = new Map(image.pages().map(([p, d]) => [p, Uint8Array.from(d)]));
     this.valid = true;
     this.buf = [];
@@ -21,6 +29,10 @@ export class SimDrive {
     this.tests = 0;
     this.pageWrites = 0;
     this.rejected = 0;
+  }
+
+  powerUp() {
+    return powerUp(this);
   }
 
   feed(bytes) {
@@ -124,7 +136,11 @@ const CORE_SET_LEN = 98;
 const CORE_MSG_MAX = 1 + CORE_SET_LEN + 2;
 
 export class SimCoreDrive {
-  constructor(settings) {
+  // card: the 32-byte ID card in the user row, or null for a drive without one.
+  constructor(settings, card = null) {
+    this.card = card;
+    this.announces = false;
+    this.answer = null; // bytes flickered back after the last hello
     this.flash = packSettings('SOTA.LED', settings); // the tagged block in the flashed engine
     this.ee = new Uint8Array(128).fill(0xff); // ATtiny412 EEPROM, erased when initialised
     this.rx = { state: 0, len: 0, pos: 0, crc: 0, msg: [] };
@@ -134,6 +150,10 @@ export class SimCoreDrive {
     this.heard = 0; // messages whose CRC-8 was right
     this.eeWrites = 0;
     this.restarts = 0;
+  }
+
+  powerUp() {
+    return powerUp(this);
   }
 
   feed(bytes) {
@@ -183,20 +203,45 @@ export class SimCoreDrive {
       this.restarts++;
     } else if (type === 4 && len === 1) {
       this.hellos++;
+      this.answer = helloAnswer(this.card);
     }
   }
 }
 
-// Same shape as WebSerialTransport, answering like station firmware 0.1.
+// Same shape as WebSerialTransport, answering like station firmware 0.2 (0.1 has no ASK or
+// WAIT). plugIn() and unplug() stand in for a hand at the socket.
 export class SimStation {
-  constructor(drive = null) {
+  constructor(drive = null, { version = '0.2' } = {}) {
     this.drive = drive;
+    this.version = version;
     this.rx = [];
     this.line = '';
     this.isOpen = false;
     this.simulated = true;
     this.elapsedMs = 0; // how long the real box would have taken
     this.sends = 0;
+    this.plugged = null; // what a drive said on plug-in, until a WAIT reports it
+    this.waiting = null; // the WAIT in progress: { out, timer }
+  }
+
+  // Someone pushes a drive into the socket (or pulls it out).
+  plugIn(drive) {
+    this.drive = drive;
+    this.plugged = drive.powerUp ? drive.powerUp() : new Uint8Array(0);
+    if (this.waiting) this.reportPlugIn();
+  }
+
+  unplug() {
+    this.drive = null;
+  }
+
+  reportPlugIn() {
+    const { out, timer } = this.waiting;
+    clearTimeout(timer);
+    this.waiting = null;
+    const heard = Array.from(this.plugged, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+    this.plugged = null;
+    out(`DRIVE ${heard}`.trim());
   }
 
   describe() {
@@ -209,9 +254,13 @@ export class SimStation {
 
   async close() {
     this.isOpen = false;
+    if (this.waiting) clearTimeout(this.waiting.timer);
+    this.waiting = null;
   }
 
   async read(n) {
+    // Nothing yet (a WAIT in progress): give the timers a moment, like a real serial read.
+    if (!this.rx.length) await new Promise((r) => setTimeout(r, 2));
     return Uint8Array.from(this.rx.splice(0, n));
   }
 
@@ -231,19 +280,33 @@ export class SimStation {
   reply(cmd) {
     const out = (s) => this.rx.push(...new TextEncoder().encode(`${s}\n`));
     const [name, baud, stop, hex, gap] = cmd.split(/\s+/);
-    if (name === 'HELLO') return out('SYNAPTO-STATION 0.1');
+    if (name === 'HELLO') return out(`SYNAPTO-STATION ${this.version}`);
     if (name === 'SENSE') return out('SENSE 2048 1650');
     if (name === 'SHOW') return out('OK');
-    if (name !== 'SEND') return out('ERR unknown command');
+    if (name === 'WAIT' && this.version !== '0.1') {
+      const ms = Number(baud);
+      if (!(ms >= 1 && ms <= 60000)) return out('ERR wait must be 1 to 60000 ms');
+      this.waiting = { out, timer: setTimeout(() => { this.waiting = null; out('NONE'); }, ms) };
+      if (this.plugged) this.reportPlugIn(); // plugged in between two WAITs
+      return;
+    }
+    const ask = name === 'ASK' && this.version !== '0.1';
+    if (name !== 'SEND' && !ask) return out('ERR unknown command');
     const b = Number(baud), s = Number(stop), g = Number(gap);
     if (!(b >= 70 && b <= 20000)) return out('ERR baud must be 70 to 20000');
     if (s !== 1 && s !== 2) return out('ERR stop bits must be 1 or 2');
     if (!/^([0-9a-fA-F]{2}){1,4096}$/.test(hex || '')) return out('ERR hex must be 1 to 4096 bytes');
     if (!(g >= 0 && g <= 60000)) return out('ERR gap must be 0 to 60000 ms');
     const bytes = Uint8Array.from(hex.match(/../g), (x) => parseInt(x, 16));
-    if (this.drive) this.drive.feed(bytes);
+    if (this.drive) {
+      this.drive.answer = null;
+      this.drive.feed(bytes);
+    }
     this.elapsedMs += (bytes.length * (9 + s) * 1000) / b + g;
     this.sends++;
-    out('OK');
+    if (!ask) return out('OK');
+    // 43 copies take 3 s: a shorter listen hears only the copies that fit.
+    const heard = Array.from((this.drive && this.drive.answer) || []).slice(0, Math.max(0, (g - 500) / 10)); // 10 ms a byte, after ~0.5 s
+    out(`HEARD ${heard.map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase()}`.trim());
   }
 }
