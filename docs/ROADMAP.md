@@ -54,8 +54,24 @@ Plug a drive into the Flash Station and its card pops up on screen within half a
 Left, all in the private firmware repo (specs in `docs/STATION-PROTOCOL.md`, under the command table):
 - [x] **Station 0.2** (17 Oct 2026, firmware repo branch `claude/roadmap-task-5-737ei4`, simulated only): `WAIT` and `ASK` as in `docs/STATION-PROTOCOL.md`. On the emulated RP2040 with a modelled drive, `DRIVE` with all 3 ID copies comes back 0.40 s after plug-in; the hello `ASK` hears 42 of 43 copies. Left: flash `station_0.2.uf2` and take the bench readings in the firmware repo's `station/README.md`.
 - **coretest 1.4 (Core):** listen for the signal for 300 ms after power-up, then flicker 3 copies of the ID.
-- **pulsetest 1.1 (Pulse):** the same, from the bootloader's power-up listen.
-- **Bench check:** first, with station 0.2 on the box, `SENSE` readings (socket empty, a drive in and dark, a drive lit) to set the box's two A0 settings. Then a Core on coretest 1.3 in the socket, Flash Station tab → Find the drive: expect "Found C-000N". Once coretest 1.4 exists: plug it in with the tab open and expect its card, tagged "Just plugged in", in under a second. If the note says it "didn't say who it is", copy the Log and run `SENSE` with the drive's LEDs on and off to see how far apart A0 is.
+- [x] **pulsetest 1.4 (Pulse):** the same, from the bootloader's power-up listen. **Bench-tested 18 Oct 2026: works** (Pulse A2 on station 0.2, its card popped up). 1.1-1.3 failed on the bench: they checked the routine (~0.17 s) before listening and missed the box's signal.
+- **Bench check:** first, with station 0.2 on the box, `SENSE` readings (socket empty, a drive in and dark, a drive lit) to set the box's two A0 settings. Pulse: done. Then a Core on coretest 1.3 in the socket, Flash Station tab → Find the drive: expect "Found C-000N". Once coretest 1.4 exists: plug it in with the tab open and expect its card, tagged "Just plugged in", in under a second. If the note says it "didn't say who it is", copy the Log and run `SENSE` with the drive's LEDs on and off to see how far apart A0 is.
+
+### 6. Don't send to an empty socket (app + station 0.3)
+Found 18 Oct 2026 (Pulse A2 on station 0.2): Jonny unplugged the drive, then sent the glacier colour set. The box sent it to nobody, the app saved "glacier" in the register, and when the drive went back in its card said glacier though it still had its old colours. One session for both repos: the station side is the firmware repo's roadmap task 6 (`SOCKET`, `WAIT` → `GONE`, `OK EMPTY`).
+- Before any send or Find: ask `SOCKET`. Empty → don't send; say "The socket is empty. Plug P-0001 in, wait for its card, then send."
+- During a plan: an `OK EMPTY` stops it. The register's lighting and engine stay as they were; the history says "Unplugged after 6 s, nothing changed". For a Pulse unplugged after the first page went out, say it may be unfinished (it waits red for the rest): "Plug it back in and send again."
+- `GONE` from WAIT: the card's tag changes from "Just plugged in" to "Unplugged" and the send buttons say "Plug the drive in".
+- Station 0.1/0.2 (no `SOCKET`): one note, "This box can't tell if the socket is empty: update it to station 0.3", and send as today.
+- Simulated station: the simulated socket gets an Unplug button and answers `SOCKET`, `GONE`, `OK EMPTY`.
+Done when: `test/station.test.mjs` shows a send to an empty socket refused, an unplug mid-send leaves the register's lighting unchanged with the right history line, and 0.2 still works; checked in headless Chromium (plug in, unplug, try to send).
+
+### 7. The drive says what lighting it has (app + pulsetest 1.5, coretest 1.5)
+Task 6 stops the obvious mistake, but the app still only knows what it *sent* (sends from another computer, a send that was heard badly, a drive re-initialised elsewhere). Better: the drive tells the app. Firmware side is the firmware repo's roadmap task 7: the introduction gains a 2-byte lighting fingerprint (Pulse: the trailer's app CRC, which a new colour set changes; Core: CRC-16 of its settings in use).
+- `parseHello` takes the old 6-byte frame and the new 8-byte one.
+- With a fingerprint: work out the fingerprint of what the register says (Pulse: `PulseImage` of the drive's engine and settings; Core: CRC-16 of the packed settings). Same → the card says "Lighting: Glacier (checked with the drive)". Different → try engine defaults, every saved routine and colour set; one matches → correct the register and log "Register corrected: the drive has engine defaults, not glacier"; none → "Lighting: not what the register says. Send settings to set it."
+- Needs the drives re-flashed on the Initialise tab with the new `_full.hex`; older drives just don't get the check.
+Done when: tests cover match, corrected and unknown for Pulse and Core, `docs/STATION-PROTOCOL.md` has the new frame, and headless Chromium shows all three cards.
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
