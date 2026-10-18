@@ -209,7 +209,10 @@ export class SimCoreDrive {
 }
 
 // Same shape as WebSerialTransport, answering like station firmware 0.2 (0.1 has no ASK or
-// WAIT). plugIn() and unplug() stand in for a hand at the socket.
+// WAIT; 0.3 also knows when its socket is empty: SOCKET, LEVELS, GONE, OK EMPTY).
+// plugIn() and unplug() stand in for a hand at the socket.
+export const SIM_LEVELS = 'LEVELS 6 30 750 28 72'; // what the emulated box reads (firmware listen_e2e.js)
+
 export class SimStation {
   constructor(drive = null, { version = '0.2' } = {}) {
     this.drive = drive;
@@ -220,27 +223,38 @@ export class SimStation {
     this.simulated = true;
     this.elapsedMs = 0; // how long the real box would have taken
     this.sends = 0;
-    this.plugged = null; // what a drive said on plug-in, until a WAIT reports it
+    this.events = []; // plug-ins ({ heard }) and unplugs ({ gone }) until a WAIT reports them
     this.waiting = null; // the WAIT in progress: { out, timer }
+    this.levels = null;
+  }
+
+  get knowsSocket() {
+    return !['0.1', '0.2'].includes(this.version);
   }
 
   // Someone pushes a drive into the socket (or pulls it out).
   plugIn(drive) {
     this.drive = drive;
-    this.plugged = drive.powerUp ? drive.powerUp() : new Uint8Array(0);
-    if (this.waiting) this.reportPlugIn();
+    this.events.push({ heard: drive.powerUp ? drive.powerUp() : new Uint8Array(0) });
+    this.levels = SIM_LEVELS;
+    if (this.waiting) this.report();
   }
 
   unplug() {
+    const was = this.drive;
     this.drive = null;
+    if (!was || !this.knowsSocket) return;
+    this.events.push({ gone: true });
+    if (this.waiting) this.report();
   }
 
-  reportPlugIn() {
+  report() {
     const { out, timer } = this.waiting;
     clearTimeout(timer);
     this.waiting = null;
-    const heard = Array.from(this.plugged, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-    this.plugged = null;
+    const e = this.events.shift();
+    if (e.gone) return out('GONE');
+    const heard = Array.from(e.heard, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
     out(`DRIVE ${heard}`.trim());
   }
 
@@ -283,11 +297,13 @@ export class SimStation {
     if (name === 'HELLO') return out(`SYNAPTO-STATION ${this.version}`);
     if (name === 'SENSE') return out('SENSE 2048 1650');
     if (name === 'SHOW') return out('OK');
+    if (name === 'SOCKET' && this.knowsSocket) return out(this.drive ? 'SOCKET IN' : 'SOCKET EMPTY');
+    if (name === 'LEVELS' && this.knowsSocket) return out(this.levels || 'LEVELS NONE');
     if (name === 'WAIT' && this.version !== '0.1') {
       const ms = Number(baud);
       if (!(ms >= 1 && ms <= 60000)) return out('ERR wait must be 1 to 60000 ms');
       this.waiting = { out, timer: setTimeout(() => { this.waiting = null; out('NONE'); }, ms) };
-      if (this.plugged) this.reportPlugIn(); // plugged in between two WAITs
+      if (this.events.length) this.report(); // plugged in (or out) between two WAITs
       return;
     }
     const ask = name === 'ASK' && this.version !== '0.1';
@@ -298,6 +314,10 @@ export class SimStation {
     if (!/^([0-9a-fA-F]{2}){1,4096}$/.test(hex || '')) return out('ERR hex must be 1 to 4096 bytes');
     if (!(g >= 0 && g <= 60000)) return out('ERR gap must be 0 to 60000 ms');
     const bytes = Uint8Array.from(hex.match(/../g), (x) => parseInt(x, 16));
+    if (!this.drive && this.knowsSocket) {
+      this.elapsedMs += (bytes.length * (9 + s) * 1000) / b + (ask ? 0 : g);
+      return out('OK EMPTY');
+    }
     if (this.drive) {
       this.drive.answer = null;
       this.drive.feed(bytes);

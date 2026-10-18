@@ -168,11 +168,29 @@ export function helloAnswer(card, copies = HELLO_COPIES) {
   return Uint8Array.from(Array.from({ length: copies }, () => one).flat());
 }
 
-// Station firmware that has ASK and WAIT (0.2 on) can read a drive's answer.
-export const canListen = (version) => {
+const versionAtLeast = (version, minor) => {
   const v = /^(\d+)\.(\d+)/.exec(version || '');
-  return !!v && Number(v[1]) * 1000 + Number(v[2]) >= 2;
+  return !!v && Number(v[1]) * 1000 + Number(v[2]) >= minor;
 };
+// Station firmware that has ASK and WAIT (0.2 on) can read a drive's answer.
+export const canListen = (version) => versionAtLeast(version, 2);
+// Station firmware that knows when its socket is empty (0.3 on): SOCKET, LEVELS, WAIT's GONE,
+// and OK EMPTY from a SEND or ASK that found nobody there.
+export const canTellSocket = (version) => versionAtLeast(version, 3);
+// What wait() returns when the drive in the socket has been unplugged (0.3 on).
+export const GONE = 'gone';
+
+// What the drive got from a plan that stopped because it was unplugged (OK EMPTY at step
+// `failed`; every step before it was answered OK, so the drive heard it). Pulse: once a
+// page has gone out the drive is marked unfinished and waits for the rest. Core: a whole
+// settings or forget copy may already have landed.
+export function unpluggedResult(plan, failed) {
+  const done = plan.slice(0, failed);
+  const isFrame = (b) => b[0] === 0x5a && b[1] === 0xa5;
+  if (done.some((s) => s.baud === BAUD && isFrame(s.bytes) && s.bytes[2] === 0x50)) return 'unfinished';
+  if (done.some((s) => s.baud === CORE_BAUD && isFrame(s.bytes) && (s.bytes[3] === 0x02 || s.bytes[3] === 0x03))) return 'maybe';
+  return 'nothing';
+}
 
 export const stepMs = (s) => Math.round((s.bytes.length * (9 + s.stopBits) * 1000) / s.baud) + s.gapMs;
 export const planMs = (plan) => plan.reduce((n, s) => n + stepMs(s), 0);
@@ -180,6 +198,44 @@ export const planMs = (plan) => plan.reduce((n, s) => n + stepMs(s), 0);
 export function formatDuration(ms) {
   const s = Math.round(ms / 1000);
   return s < 90 ? `${s} s` : `${Math.round(s / 6) / 10} min`;
+}
+
+// ---------------------------------------------------------------- the register after a send
+// What a plan that finished, was stopped or met an empty socket means for the drive's
+// register entry. Changes drive in place only when the plan completed; returns the history
+// line's result (and, after an unplug, what the drive may have got: see unpluggedResult).
+//   settings: what the plan sent (null for a link test, forget or hello)
+//   routine: the routine's name, null for engine defaults, undefined to leave it as it is
+//   engine: { label, file, kind } of a whole engine that was sent, else null
+//   forget: a Core went back to its flashed settings
+export function afterSend(drive, r, { plan, settings = null, routine, engine = null, forget = false }) {
+  if (r.empty) {
+    const after = `Unplugged after ${formatDuration(r.sent)}`;
+    const got = unpluggedResult(plan, r.failed);
+    const result = got === 'unfinished' ? `${after}: it may be unfinished (it waits red for the rest)`
+      : got === 'maybe' ? `${after}: it may have the new lighting` : `${after}, nothing changed`;
+    return { result, got };
+  }
+  if (!r.completed) return { result: 'Stopped before the end' };
+  if (settings) {
+    // A Core keeps its flashed settings under the sent ones; remember them for "forget".
+    if (drive.family === 'core' && !drive.flashedSettings) {
+      drive.flashedSettings = drive.settings;
+      drive.flashedRoutine = drive.routine;
+    }
+    drive.settings = settings;
+  }
+  if (forget) {
+    if (drive.flashedSettings) {
+      drive.settings = drive.flashedSettings;
+      drive.routine = drive.flashedRoutine ?? null;
+    }
+    delete drive.flashedSettings;
+    delete drive.flashedRoutine;
+  }
+  if (engine) drive.engine = engine;
+  if (routine !== undefined) drive.routine = routine;
+  return { result: 'Done' };
 }
 
 // ---------------------------------------------------------------- the box
@@ -244,40 +300,67 @@ export class Station {
     return reply;
   }
 
+  // Sends one step. False if the box found the socket empty at some point during it (0.3 on).
   async send(s) {
     const wait = stepMs(s) + 3000;
     const reply = await this.command(`SEND ${s.baud} ${s.stopBits} ${hex(s.bytes)} ${s.gapMs}`, wait);
+    if (reply === 'OK EMPTY') return false;
     if (reply !== 'OK') throw new StationError(`Unexpected answer from the station: ${reply}`);
+    return true;
   }
 
   // Sends one step like send(), but listens on the sense wire during its gap and returns the
-  // bytes the drive flickered back (empty if it said nothing).
+  // bytes the drive flickered back (empty if it said nothing; null if the socket was empty).
   async ask(s) {
     const wait = stepMs(s) + 3000;
     const reply = await this.command(`ASK ${s.baud} ${s.stopBits} ${hex(s.bytes)} ${s.gapMs}`, wait);
+    if (reply === 'OK EMPTY') return null;
     const m = /^HEARD(?:\s+([0-9A-Fa-f]*))?$/.exec(reply);
     if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
     return Uint8Array.from((m[1] || '').match(/../g) || [], (x) => parseInt(x, 16));
   }
 
-  // Waits up to ms for a drive to be plugged in. Returns null if none was, otherwise the
-  // bytes it flickered when it introduced itself (empty for an engine that doesn't).
+  // Waits up to ms for a drive to be plugged in. Returns null if none was, GONE if the drive
+  // in the socket was unplugged (0.3 on), otherwise the bytes it flickered when it introduced
+  // itself (empty for an engine that doesn't).
   async wait(ms) {
     const reply = await this.command(`WAIT ${ms}`, ms + 3000);
     if (reply === 'NONE') return null;
+    if (reply === 'GONE') return GONE;
     const m = /^DRIVE(?:\s+([0-9A-Fa-f]*))?$/.exec(reply);
     if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
     return Uint8Array.from((m[1] || '').match(/../g) || [], (x) => parseInt(x, 16));
   }
 
+  // Is a drive in the socket? (0.3 on; the box checks with one 5 ms dip if it isn't sure.)
+  async socket() {
+    const reply = await this.command('SOCKET');
+    if (reply === 'SOCKET IN') return true;
+    if (reply === 'SOCKET EMPTY') return false;
+    throw new StationError(`Unexpected answer from the station: ${reply}`);
+  }
+
+  // What the box read on the sense wire at the last plug-in (0.3 on), raw ADC counts: empty
+  // before, 10 ms in, in the signal's dips, lowest and highest while the drive answered.
+  async levels() {
+    const reply = await this.command('LEVELS');
+    if (reply === 'LEVELS NONE') return null;
+    const m = /^LEVELS((?:\s+\d+){5})$/.exec(reply);
+    if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
+    const [empty, inSocket, dip, low, high] = m[1].trim().split(/\s+/).map(Number);
+    return { empty, in: inSocket, dip, low, high };
+  }
+
   // Sends every step in order. Stopping happens between steps; the line then rests at full
-  // supply, so the drive just carries on with whatever it already had.
+  // supply, so the drive just carries on with whatever it already had. A step the box answers
+  // OK EMPTY (the drive was unplugged) ends the plan: { completed: false, empty: true,
+  // failed: that step's index }.
   async run(plan, { onProgress = () => {}, shouldStop = () => false } = {}) {
     const total = planMs(plan);
     let done = 0;
-    for (const s of plan) {
+    for (const [i, s] of plan.entries()) {
       if (shouldStop()) return { completed: false, sent: done, total };
-      await this.send(s);
+      if (!(await this.send(s))) return { completed: false, empty: true, failed: i, sent: done, total };
       done += stepMs(s);
       onProgress({ done, total, step: s });
     }

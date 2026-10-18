@@ -12,10 +12,10 @@ import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
 import {
   testPlan, patchPlan, fullPlan, planMs, Station, wake,
   crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
-  parseHello, helloAnswer, canListen, PLUG_COPIES,
+  parseHello, helloAnswer, canListen, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
 } from '../js/station.js';
 import { encodeCard } from '../js/idcard.js';
-import { SimStation, SimDrive, SimCoreDrive } from '../js/sim-station.js';
+import { SimStation, SimDrive, SimCoreDrive, SIM_LEVELS } from '../js/sim-station.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TMP = mkdtempSync(join(tmpdir(), 'fs-station-'));
@@ -343,4 +343,104 @@ test('Core refuses a wrong layout byte or settings CRC-16 even when the CRC-8 is
   for (const s of patchPlan(newImage())) drive.feed(s.bytes);
   assert.equal(drive.eeWrites, 0);
   assert.equal(drive.source(), 'flash');
+});
+
+// ---------------------------------------------------------------- station 0.3: the socket
+async function station3(drive) {
+  const sim = new SimStation(drive, { version: '0.3' });
+  const st = new Station(sim);
+  await st.connect();
+  return { sim, st };
+}
+const pulseRecord = () => ({ drive: 'P-0001', family: 'pulse', board: 'Pulse A2', settings: { ...PULSE_DEFAULTS }, routine: 'original',
+  engine: { label: 'pulsetest 1.4', file: 'pulsetest_1.4_app.hex', kind: 'pulsetest' }, history: [] });
+
+test('station 0.3: SOCKET says whether a drive is in; 0.2 has no SOCKET', async () => {
+  const { st, sim } = await station3(null);
+  assert.ok(canTellSocket(st.version));
+  assert.equal(await st.socket(), false);
+  sim.plugIn(new SimDrive(oldImage()));
+  assert.equal(await st.socket(), true);
+  const { st: old } = await station(null);
+  assert.equal(canTellSocket(old.version), false);
+  assert.equal(canTellSocket('0.10'), true);
+  await assert.rejects(old.socket(), /refused/);
+});
+
+test('station 0.3: a send to an empty socket is refused by the box, and the register keeps its lighting', async () => {
+  const { st } = await station3(null);
+  const plan = patchPlan(newImage());
+  const r = await st.run(plan);
+  assert.deepEqual([r.completed, r.empty, r.failed], [false, true, 0]);
+  const drive = pulseRecord();
+  const before = JSON.stringify(drive);
+  const after = afterSend(drive, r, { plan, settings: newImage().settings, routine: 'glacier' });
+  assert.equal(after.result, 'Unplugged after 0 s, nothing changed');
+  assert.equal(JSON.stringify(drive), before, 'lighting, routine and engine as they were');
+  assert.equal(await st.ask(coreHelloPlan()[0]), null, 'ASK to an empty socket: OK EMPTY');
+});
+
+test('station 0.3: a Pulse unplugged mid-send leaves the register as it was; the history says what the drive may have', async () => {
+  const pulse = new SimDrive(oldImage());
+  const { st, sim } = await station3(pulse);
+  const plan = patchPlan(newImage());
+  // Unplugged after the wake-up call: nothing reached the drive's flash.
+  let r = await st.run(plan, { onProgress: ({ step }) => { if (step === plan[0]) sim.unplug(); } });
+  assert.deepEqual([r.empty, r.failed], [true, 1]);
+  assert.equal(pulse.pageWrites, 0);
+  const drive = pulseRecord(), before = JSON.stringify(drive);
+  assert.equal(afterSend(drive, r, { plan, settings: newImage().settings, routine: 'glacier' }).result, 'Unplugged after 5 s, nothing changed');
+  assert.equal(JSON.stringify(drive), before);
+  assert.equal(await st.wait(30), GONE, 'WAIT reports the unplug');
+  assert.equal(await st.wait(30), null, '...once');
+  // Unplugged after the first settings page went out: unfinished, it waits for the rest.
+  sim.plugIn(pulse);
+  await st.wait(30);
+  r = await st.run(plan, { onProgress: ({ step }) => { if (step === plan[2]) sim.unplug(); } });
+  assert.deepEqual([r.empty, r.failed], [true, 3]);
+  assert.equal(pulse.valid, false, 'the simulated drive did start changing');
+  const a = afterSend(drive, r, { plan, settings: newImage().settings, routine: 'glacier' });
+  assert.equal(a.got, 'unfinished');
+  assert.match(a.result, /^Unplugged after 6 s: it may be unfinished/);
+  assert.equal(JSON.stringify(drive), before, 'still the old lighting in the register');
+  assert.equal(unpluggedResult(testPlan([1, 2, 3]), 50), 'nothing', 'a link test changes nothing');
+});
+
+test('station 0.3: a Core unplugged after a settings copy may have the new lighting', async () => {
+  const core = new SimCoreDrive(CORE_DEFAULTS, card(3));
+  const { st, sim } = await station3(core);
+  const changed = { ...CORE_DEFAULTS, brightness: 40 };
+  const plan = coreSettingsPlan(changed);
+  const r = await st.run(plan, { onProgress: ({ step }) => { if (step === plan[0]) sim.unplug(); } });
+  assert.deepEqual([r.empty, r.failed], [true, 1]);
+  assert.equal(unpluggedResult(plan, r.failed), 'maybe');
+  assert.equal(unpluggedResult(coreTestPlan([1, 2, 3]), 2), 'nothing');
+  const drive = { drive: 'C-0003', family: 'core', settings: { ...CORE_DEFAULTS }, routine: null, history: [] };
+  assert.match(afterSend(drive, r, { plan, settings: changed }).result, /it may have the new lighting/);
+  assert.deepEqual(drive.settings, CORE_DEFAULTS);
+});
+
+test('station 0.3: a drive left in all the way gets plain OKs; LEVELS after a plug-in', async () => {
+  const { st, sim } = await station3(null);
+  assert.equal(await st.levels(), null, 'LEVELS NONE before the first plug-in');
+  const pulse = new SimDrive(oldImage(), card(4, 'Pulse A2', 'P'));
+  pulse.announces = true;
+  sim.plugIn(pulse);
+  assert.equal(parseHello(await st.wait(30)).label, 'P-0004');
+  const lv = await st.levels();
+  assert.deepEqual(Object.values(lv), SIM_LEVELS.split(' ').slice(1).map(Number));
+  const r = await st.run(patchPlan(newImage()));
+  assert.ok(r.completed && !r.empty);
+  assert.deepEqual(pulse.settings(), { ...PULSE_DEFAULTS, ...NEW });
+  const drive = pulseRecord();
+  assert.equal(afterSend(drive, r, { plan: patchPlan(newImage()), settings: newImage().settings, routine: 'glacier' }).result, 'Done');
+  assert.equal(drive.routine, 'glacier');
+});
+
+test('station 0.2 still works: no SOCKET, sends to an empty socket answer OK as before, unplugs are not reported', async () => {
+  const { st, sim } = await station(new SimDrive(oldImage()));
+  sim.unplug();
+  const r = await st.run(testPlan([1, 2, 3]));
+  assert.ok(r.completed);
+  assert.equal(await st.wait(30), null);
 });
