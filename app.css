@@ -229,6 +229,7 @@ details.small > *:not(summary) { margin-top: 10px; }
 .fs-card .drive-art { max-width: 110px; margin: 0; }
 .fs-card-tag { margin: 0; color: var(--muted); font: 600 14px/1.2 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; }
 .fs-card[data-fresh] .fs-card-tag { color: var(--resin); }
+.fs-card[data-gone] { opacity: 0.6; }
 .fs-card-label { margin: 2px 0 8px; font: 700 40px/1 var(--cond); }
 .fs-card-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; font-size: 15px; }
 .fs-card-facts dt { color: var(--muted); }

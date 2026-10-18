@@ -2,12 +2,15 @@
 // a whole engine (Pulse), or a link test, new settings, forget or hello (Core), and log
 // every send in the drive's history. With station 0.2 or later, "Find the drive" asks the
 // drive in the socket for its ID card and picks it in the list, and a drive that introduces
-// itself on plug-in (coretest 1.4, pulsetest 1.1) pops up in the card on its own.
+// itself on plug-in (coretest 1.4, pulsetest 1.1) pops up in the card on its own. With
+// station 0.3 or later nothing is sent to an empty socket, and a drive unplugged mid-send
+// leaves the register as it was.
 
 import { PulseImage } from './engines.js';
 import {
   Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
   coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen,
+  canTellSocket, afterSend, GONE,
 } from './station.js';
 import { encodeCard } from './idcard.js';
 import { DriveArt } from './drive-art.js';
@@ -20,7 +23,10 @@ const remember = (v) => { try { localStorage.setItem(LAST_KEY, v); } catch {} };
 const recall = () => { try { return localStorage.getItem(LAST_KEY); } catch { return null; } };
 
 export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) {
-  const fs = { station: null, busy: false, stop: false, seen: null };
+  // socket: 'in', 'empty' or null (not known: station 0.1/0.2, or not connected).
+  const fs = { station: null, busy: false, stop: false, seen: null, socket: null };
+  const tellsSocket = () => !!fs.station && canTellSocket(fs.station.version);
+  const emptyNote = (drive) => `The socket is empty. Plug ${drive ? drive.drive : 'the drive'} in, wait for its card, then send.`;
   const cardArt = new DriveArt($('fsCardArt'));
 
   const KIND = { pulse: 'pulsetest', core: 'coretest' };
@@ -76,9 +82,12 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   function refreshButtons() {
     const lim = limits();
     const core = isCore();
-    const off = (btn, why) => { btn.disabled = fs.busy || !!(lim.all || why); };
+    // Unplugged (station 0.3): the main button says so (a click still asks the box, in case
+    // the drive is back), the other sends wait for a drive.
+    const unplugged = fs.socket === 'empty';
+    const off = (btn, why, waitsForDrive = true) => { btn.disabled = fs.busy || !!(lim.all || why) || (waitsForDrive && unplugged); };
     off($('fsTest'), lim.test);
-    off($('fsSettings'), lim.settings);
+    off($('fsSettings'), lim.settings, false);
     off($('fsEngineSend'), lim.engine);
     off($('fsForget'), lim.forget);
     off($('fsHello'), lim.hello);
@@ -92,12 +101,13 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       $('fsFindNote').textContent = `Station firmware ${fs.station.version} can't read a drive's answer. Update the box to station 0.2 to find drives, or pick the drive by hand.`;
     }
     $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
-    $('fsSettings').textContent = `Send settings (about ${core ? '36' : '15'} s)`;
+    $('fsSettings').textContent = unplugged ? 'Plug the drive in' : `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
     for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
     $('fsSimSocket').hidden = !(fs.station && fs.station.transport.simulated && listens);
     $('fsPlug').disabled = fs.busy;
+    $('fsUnplug').disabled = fs.busy || !(fs.station && fs.station.transport.drive);
     const why = lim.all || lim.settings || (core ? '' : lim.engine) || '';
     $('fsEngineNote').textContent = why;
     const e = selectedEngine();
@@ -148,8 +158,10 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     if (!d && !unknown) return;
     const label = unknown ? unknown.label : d.drive;
     const fresh = !!seen && seen.label === label;
-    $('fsCard').toggleAttribute('data-fresh', fresh);
-    $('fsCardTag').textContent = fresh ? (seen.how === 'plug' ? 'Just plugged in' : 'Found by station hello') : 'Picked in the list';
+    const gone = fresh && fs.socket === 'empty';
+    $('fsCard').toggleAttribute('data-fresh', fresh && !gone);
+    $('fsCard').toggleAttribute('data-gone', gone);
+    $('fsCardTag').textContent = gone ? 'Unplugged' : fresh ? (seen.how === 'plug' ? 'Just plugged in' : 'Found by station hello') : 'Picked in the list';
     $('fsCardLabel').textContent = label;
     const facts = unknown
       ? [['Board', unknown.board], ['Register', "Not in this library's register. Choose the library folder it was initialised with."]]
@@ -214,9 +226,12 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const st = new Station(transport);
     await st.connect();
     fs.station = st;
+    fs.socket = null;
     $('fsFindNote').textContent = '';
-    $('fsStatus').textContent = `${label} connected: station firmware ${st.version}.`;
+    const tells = canTellSocket(st.version);
+    $('fsStatus').textContent = `${label} connected: station firmware ${st.version}.${tells ? '' : " This box can't tell if the socket is empty: update it to station 0.3."}`;
     log(`Station: ${label}, firmware ${st.version}`);
+    if (tells) fs.socket = (await st.socket()) ? 'in' : 'empty';
     refresh();
     if (canListen(st.version)) watch(st);
   }
@@ -239,6 +254,14 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         continue;
       }
       if (fs.station !== st || bytes === null) continue;
+      if (bytes === GONE) {
+        fs.socket = 'empty';
+        log(`Unplugged${fs.seen ? `: ${fs.seen.label}` : ''}`);
+        $('fsFindNote').textContent = '';
+        refresh();
+        continue;
+      }
+      if (tellsSocket()) fs.socket = 'in';
       const heard = parseHello(bytes);
       if (!heard || heard.blank) {
         fs.seen = null; // whatever the card said was plugged in before has gone
@@ -255,7 +278,27 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         $('fsFindNote').textContent = '';
         identified(heard, 'plug');
       }
+      if (tellsSocket()) await logLevels(st);
     }
+  }
+
+  // Station 0.3 measures the sense wire at each plug-in: logged for the bench numbers.
+  async function logLevels(st) {
+    try {
+      const lv = await st.levels();
+      if (lv) log(`Socket levels: empty ${lv.empty}, drive in ${lv.in}, in a dip ${lv.dip}, while it answered ${lv.low}–${lv.high}`);
+    } catch (e) {
+      log(`Socket levels: ${e.message}`);
+    }
+  }
+
+  // Station 0.3: is there a drive to send to? Asks the box (it checks with one 5 ms dip if it
+  // isn't sure). Older boxes can't tell: true.
+  async function socketHasDrive() {
+    if (!tellsSocket()) return true;
+    const inSocket = await fs.station.socket();
+    fs.socket = inSocket ? 'in' : 'empty';
+    return inSocket;
   }
 
   $('fsConnect').addEventListener('click', async () => {
@@ -280,7 +323,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (!state.library) await setLibrary(new Library(new MemoryStore('Demo library (not saved)')));
       if (!sendable().some((d) => d.family === 'pulse')) await demoDrive('pulse');
       if (!sendable().some((d) => d.family === 'core')) await demoDrive('core');
-      await useStation(new SimStation(null), 'Simulated station');
+      await useStation(new SimStation(null, { version: '0.3' }), 'Simulated station');
     } catch (e) {
       $('fsStatus').textContent = e.message;
     }
@@ -290,6 +333,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     if (fs.station) await fs.station.close().catch(() => {});
     fs.station = null;
     fs.seen = null;
+    fs.socket = null;
     $('fsStatus').textContent = 'Disconnected.';
     refresh();
   });
@@ -326,6 +370,13 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const event = { date: new Date().toISOString(), station: 'Flash Station', action, engine: engine ? engine.label : '' };
     let settings = null, img = null;
     try {
+      if (!(await socketHasDrive())) {
+        setProgress(emptyNote(drive));
+        log(`${action} to ${drive.drive}: not sent, the socket is empty`);
+        fs.busy = false;
+        refresh();
+        return;
+      }
       const built = await build(drive, engine);
       img = built.img;
       settings = built.settings;
@@ -333,7 +384,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (img) event.imageId = hex4(img.imageId());
       if (built.routine !== undefined) event.routine = built.routine;
       // The simulated station gets a simulated drive that starts as the register says.
-      if (fs.station.transport.simulated) {
+      if (fs.station.transport.simulated && fs.station.transport.drive) {
         fs.station.transport.drive = drive.family === 'core'
           ? simCoreDrive(drive, engine)
           : new SimDrive(new PulseImage(engine.app, engine.version, drive.settings));
@@ -347,26 +398,18 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         onProgress: ({ done }) => setProgress(`${action}: ${formatDuration(total - done)} to go. Keep ${drive.drive} in the socket.`, done / total),
       });
       event.seconds = Math.round((Date.now() - t0) / 1000);
-      event.result = r.completed ? 'Done' : 'Stopped before the end';
-      setProgress(r.completed ? `${action}: done. ${how.done}` : `${action}: stopped. ${how.stopped}`, r.completed ? 1 : null);
-      if (r.completed && settings) {
-        // A Core keeps its flashed settings under the sent ones; remember them for "forget".
-        if (drive.family === 'core' && !drive.flashedSettings) {
-          drive.flashedSettings = drive.settings;
-          drive.flashedRoutine = drive.routine;
-        }
-        drive.settings = settings;
+      const after = afterSend(drive, r, {
+        plan, settings, routine: built.routine, forget: !!how.forget,
+        engine: how.engine ? { label: engine.label, file: engine.fileName, kind: engine.kind } : null,
+      });
+      event.result = after.result;
+      if (r.completed) setProgress(`${action}: done. ${how.done}`, 1);
+      else if (!r.empty) setProgress(`${action}: stopped. ${how.stopped}`);
+      else {
+        // The box found the socket empty: the register keeps the lighting and engine it had.
+        fs.socket = 'empty';
+        setProgress(`${action}: ${after.result}. ${after.got === 'nothing' ? emptyNote(drive) : `Plug ${drive.drive} back in and send again.`}`);
       }
-      if (r.completed && how.forget) {
-        if (drive.flashedSettings) {
-          drive.settings = drive.flashedSettings;
-          drive.routine = drive.flashedRoutine ?? null;
-        }
-        delete drive.flashedSettings;
-        delete drive.flashedRoutine;
-      }
-      if (r.completed && how.engine) drive.engine = { label: engine.label, file: engine.fileName, kind: engine.kind };
-      if (r.completed && built.routine !== undefined) drive.routine = built.routine;
     } catch (e) {
       event.result = `Failed: ${e.message}`;
       setProgress(`${action} failed. ${e.message}`);
@@ -444,13 +487,25 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     note('Asking the drive in the socket who it is. Keep it in the socket…');
     let found = null, result;
     try {
+      if (!(await socketHasDrive())) {
+        note('The socket is empty. Plug the drive in, then try again.');
+        log('Find the drive: the socket is empty');
+        fs.busy = false;
+        refresh();
+        return;
+      }
       if (fs.station.transport.simulated) {
         // The simulated socket holds the Core picked in the list, or the first one.
         const d = sendable().find((x) => x.family === 'core' && x.drive === $('fsDrive').value) || sendable().find((x) => x.family === 'core');
-        fs.station.transport.drive = d ? simCoreDrive(d, state.demo.find((x) => x.kind === 'coretest')) : null;
+        if (fs.station.transport.drive || !tellsSocket()) fs.station.transport.drive = d ? simCoreDrive(d, state.demo.find((x) => x.kind === 'coretest')) : null;
       }
-      const heard = parseHello(await fs.station.ask(coreHelloPlan()[0]));
-      if (!heard) {
+      const answer = await fs.station.ask(coreHelloPlan()[0]);
+      const heard = answer && parseHello(answer);
+      if (answer === null) {
+        fs.socket = 'empty';
+        result = 'The socket is empty';
+        note('The drive was unplugged. Plug it back in, then try again.');
+      } else if (!heard) {
         result = 'No answer';
         note('No answer. Push the drive all the way into the socket and try again. Only Core drives on coretest 1.3 or later answer so far; for a Pulse, pick it in the list.');
       } else if (heard.blank) {
@@ -522,6 +577,13 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     }
     log(`Simulated socket: plugged in ${$('fsSimDrive').selectedOptions[0].text}`);
     fs.station.transport.plugIn(sim);
+    refreshButtons();
+  });
+
+  $('fsUnplug').addEventListener('click', () => {
+    log('Simulated socket: unplugged');
+    fs.station.transport.unplug();
+    refreshButtons();
   });
 
   $('fsEngineSend').addEventListener('click', () => {
