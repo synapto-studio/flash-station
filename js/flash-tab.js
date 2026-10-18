@@ -255,6 +255,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       }
       if (fs.station !== st || bytes === null) continue;
       if (bytes === GONE) {
+        if (fs.socket === 'empty') continue; // already said
         fs.socket = 'empty';
         log(`Unplugged${fs.seen ? `: ${fs.seen.label}` : ''}`);
         $('fsFindNote').textContent = '';
