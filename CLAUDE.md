@@ -30,6 +30,8 @@ Jonny wants regular reminders on using Claude efficiently. When a session gets l
 - `js/updi.js` UPDI programmer (port of pymcuprog SerialUPDI) · `js/serial.js` Web Serial transport · `js/sim.js` simulated chip
 - `js/engines.js` engine detection, settings layouts, pulsetest image (matches `test/ref_pulse_station.py`)
 - `js/idcard.js` 32-byte ID card in the user row · `js/library.js` library folder + drive register · `js/profiles.js` drive profiles (LED count, groups, positions) · `js/routines.js`, `js/phases.js`, `js/palettes.js` routines, phase files, colour sets · `js/initialise.js` IS flow
+- `js/songs.js` song moments (R1): frame answers, prints, training, the drive's matcher (C twin in firmware `pulsetest/songmatch/`) · `test/song_experiment.mjs` R1 on real clips (needs ffmpeg; clips never committed)
 - `js/main.js` UI · `js/drive-art.js` the drive drawing
 - `docs/ROADMAP.md` what to build next, in order, with how to check each part
 - `docs/STATION-PROTOCOL.md` the power-line protocol and the XIAO wiring
+- `docs/SONG-RECOGNITION.md` R1 results: can a Pulse recognise a moment in a song (go)
