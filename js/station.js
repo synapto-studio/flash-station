@@ -187,6 +187,8 @@ export const canListen = (version) => versionAtLeast(version, 2);
 // Station firmware that knows when its socket is empty (0.3 on): SOCKET, LEVELS, WAIT's GONE,
 // and OK EMPTY from a SEND or ASK that found nobody there.
 export const canTellSocket = (version) => versionAtLeast(version, 3);
+// Station firmware that can measure the socket with one dip (0.6 on): PROBE.
+export const canProbe = (version) => versionAtLeast(version, 6);
 // What wait() returns when the drive in the socket has been unplugged (0.3 on).
 export const GONE = 'gone';
 
@@ -351,6 +353,16 @@ export class Station {
     if (reply === 'SOCKET IN') return true;
     if (reply === 'SOCKET EMPTY') return false;
     throw new StationError(`Unexpected answer from the station: ${reply}`);
+  }
+
+  // One 5 ms dip (0.6 on): A0 at full supply, then the lowest, average, highest and last reading
+  // in the dip, raw counts (0.8 mV each). For the bench: the socket empty vs a drive in.
+  async probe() {
+    const reply = await this.command('PROBE');
+    const m = /^PROBE((?:\s+\d+){5})$/.exec(reply);
+    if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
+    const [full, min, avg, max, end] = m[1].trim().split(/\s+/).map(Number);
+    return { full, min, avg, max, end };
   }
 
   // What the box read on the sense wire at the last plug-in (0.3 on), raw ADC counts: empty

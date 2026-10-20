@@ -9,7 +9,7 @@
 import { PulseImage } from './engines.js';
 import {
   Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
-  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen,
+  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen, canProbe,
   canTellSocket, afterSend, GONE,
 } from './station.js';
 import { encodeCard } from './idcard.js';
@@ -103,8 +103,9 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
     $('fsSettings').textContent = unplugged ? 'Plug the drive in' : `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
-    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect']) $(id).disabled = fs.busy;
+    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect', 'fsProbe']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
+    $('fsProbe').hidden = !fs.station || !canProbe(fs.station.version);
     $('fsSimSocket').hidden = !(fs.station && fs.station.transport.simulated && listens);
     $('fsPlug').disabled = fs.busy;
     $('fsUnplug').disabled = fs.busy || !(fs.station && fs.station.transport.drive);
@@ -346,9 +347,22 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (!state.library) await setLibrary(new Library(new MemoryStore('Demo library (not saved)')));
       if (!sendable().some((d) => d.family === 'pulse')) await demoDrive('pulse');
       if (!sendable().some((d) => d.family === 'core')) await demoDrive('core');
-      await useStation(new SimStation(null, { version: '0.3' }), 'Simulated station');
+      await useStation(new SimStation(null, { version: '0.6' }), 'Simulated station');
     } catch (e) {
       $('fsStatus').textContent = e.message;
+    }
+  });
+
+  // Bench numbers (station 0.6): what A0 reads at full supply and in one 5 ms dip. Measure with
+  // the socket empty, then with each drive in.
+  $('fsProbe').addEventListener('click', async () => {
+    const st = fs.station;
+    if (!st) return;
+    try {
+      const p = await st.probe();
+      log(`Socket measured: full ${p.full}, in a dip ${p.min}–${p.max} (average ${p.avg}, at the end ${p.end})`);
+    } catch (e) {
+      log(`Socket measured: ${e.message}`);
     }
   });
 

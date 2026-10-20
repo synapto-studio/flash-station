@@ -11,7 +11,7 @@ socket GND (black) ──┬── 1N4001, stripe towards XIAO GND ──┐
 XIAO D6 (TX, GPIO0) ── 470 Ω ── BC337 B
 socket GND (black) ── 10 kΩ ─────────────────── XIAO A0 (sense wire, below ~1 V)
 ```
-The 10 kΩ protects A0 if the diode is ever fitted backwards. Status LEDs (2 white on D4/D5, 2 RGB on D1–D3 and D10–D8) are in the firmware repo's `station/README.md`.
+The 10 kΩ protects A0 if the diode is ever fitted backwards. **Add a second 10 kΩ from socket GND (black) to XIAO GND** (across the transistor): without it an empty socket's ground floats in a dip, and the box reads anything from ~160 to over 250 there (first bench run, 20 Oct 2026), close to what a drive reads. With it an empty socket reads ~0 in a dip; it takes only 60 µA from a drive. Status LEDs (2 white on D4/D5, 2 RGB on D1–D3 and D10–D8) are in the firmware repo's `station/README.md`.
 Line idle (high) = transistor on = full 5 V. A 0 bit = transistor off = dip. Same as the Pi's pin 8 in the old guides.
 
 ## Station commands (firmware station 0.3)
@@ -19,9 +19,10 @@ USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 
 | Send | Reply |
 | --- | --- |
-| `HELLO` | `SYNAPTO-STATION 0.5` (0.4 only spots a plug-in by the drive's current: on the first bench run it never did; 0.1 has no ASK or WAIT; 0.2 has no SOCKET, LEVELS, GONE or OK EMPTY; 0.3 doesn't count the 1.5 ID frame's copies, so its green light and station mode miss 1.5 drives) |
+| `HELLO` | `SYNAPTO-STATION 0.6` (0.5 took one stray reading in a dip for a drive, so a floating empty socket kept "plugging in"; 0.4 only spots a plug-in by the drive's current: on the first bench run it never did; 0.1 has no ASK or WAIT; 0.2 has no SOCKET, LEVELS, GONE or OK EMPTY; 0.3 doesn't count the 1.5 ID frame's copies, so its green light and station mode miss 1.5 drives) |
 | `SEND <baud> <stopbits> <hex> <gapMs>` | `OK` after the last stop bit has gone and the line has then been held at full supply for gapMs (plus about one bit). Baud 70–20000, stop bits 1–2, 1–4096 bytes (hex, either case), gap 0–60000. Station 0.3: `OK EMPTY` instead if the socket was empty at any point during it (below) |
 | `SENSE` | `SENSE <raw 0-4095> <millivolts>` on A0 (average of 64) |
+| `PROBE` (station 0.6) | `PROBE <full> <min> <avg> <max> <end>`: one 5 ms dip; A0 at full supply before it, then the lowest, average, highest and last reading in it. The app's "Measure the socket" button logs it |
 | `SHOW` | `OK` (replays the station's start-up light show) |
 | `ASK <baud> <stopbits> <hex> <listenMs>` (station 0.2) | `HEARD <hex>`, or `HEARD` alone if nothing was heard. Sends like SEND, then holds full supply for listenMs while reading the drive's answer on A0 (below). Station 0.3: `OK EMPTY` (and no listening) if the socket was empty |
 | `WAIT <ms>` (station 0.2) | `DRIVE <hex>` as soon as a drive is plugged in (`DRIVE` alone if it said nothing), or `NONE` after ms (1–60000) with no plug-in. Station 0.3: also `GONE`, once, after the drive has been unplugged. Plug-ins and unplugs between two WAITs are reported in order, one per WAIT |
@@ -42,6 +43,8 @@ USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 | ~0.4 s | Kept until a WAIT reports it, once (`DRIVE <hex>`; `DRIVE` alone if nothing was heard). Box flashes green if it heard an ID, blinks red if not |
 
 A drive counts as gone only after 0.5 s near the empty level, so a drive whose LEDs go dark for a moment isn't "plugged in" again (the signal restarts a running Pulse). A plug-in during a SEND or ASK, or within 1 s after one, isn't introduced: the app is already talking to that drive (a send that found the socket empty doesn't count). `PLUG_MARGIN` and the 16-count swing are guesses until the bench readings (`LEVELS`, logged by the app after each plug-in).
+
+**Bench numbers (20 Oct 2026, station 0.5, first box):** empty socket ~61-67 at full supply; a drive just plugged in (dark) the same; with nothing answering A0 wandered ~45-63; a lit drive up to ~320; in a dip a real drive ~1030, an empty socket ~160-210 (floating, see the wiring). Station 0.6 uses them: a drive needs 3 readings of 500 or more in a dip (0.5: one of 250), an empty socket reads under 350, and nothing is decoded below a 40-count swing (was 16). pulsetest 1.7 flickers its ID at full white (1.5-1.6: at the pulse's level 200; dimmed LEDs flicker their current).
 
 **Finding a drive that goes in (station 0.5, built 20 Oct 2026, simulated only).** While the socket is empty the box sends one 5 ms dip every 100 ms; a drive reads ~750 on A0 in a dip, an empty socket ~0, so a drive is found within ~0.1 s whatever it draws at full supply, and then gets the plug-in signal as before (the old current check still works too). Every engine ignores single 5 ms dips (they're the same as the in-step dips). Why: on the first bench run with station 0.4, sends found the drive (by their dips) but no plug-in was ever reported.
 

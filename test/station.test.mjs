@@ -12,7 +12,7 @@ import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
 import {
   testPlan, patchPlan, fullPlan, planMs, Station, wake,
   crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
-  parseHello, helloAnswer, canListen, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
+  parseHello, helloAnswer, canListen, canProbe, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
 } from '../js/station.js';
 import { encodeCard } from '../js/idcard.js';
 import { SimStation, SimDrive, SimCoreDrive, SIM_LEVELS } from '../js/sim-station.js';
@@ -478,4 +478,14 @@ test('station 0.2 still works: no SOCKET, sends to an empty socket answer OK as 
   const r = await st.run(testPlan([1, 2, 3]));
   assert.ok(r.completed);
   assert.equal(await st.wait(30), null);
+});
+
+test('station 0.6: PROBE measures the socket (empty vs a drive in)', async () => {
+  const empty = new Station(new SimStation(null, { version: '0.6' }));
+  await empty.connect();
+  assert.deepEqual(await empty.probe(), { full: 61, min: 4, avg: 6, max: 9, end: 6 });
+  const st = new Station(new SimStation(new SimDrive(oldImage()), { version: '0.6' }));
+  await st.connect();
+  assert.equal((await st.probe()).end, 1030);
+  assert.ok(canProbe('0.6') && !canProbe('0.5'));
 });
