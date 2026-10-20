@@ -19,7 +19,7 @@ USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 
 | Send | Reply |
 | --- | --- |
-| `HELLO` | `SYNAPTO-STATION 0.4` (0.1 has no ASK or WAIT; 0.2 has no SOCKET, LEVELS, GONE or OK EMPTY; 0.3 doesn't count the 1.5 ID frame's copies, so its green light and station mode miss 1.5 drives) |
+| `HELLO` | `SYNAPTO-STATION 0.5` (0.4 only spots a plug-in by the drive's current: on the first bench run it never did; 0.1 has no ASK or WAIT; 0.2 has no SOCKET, LEVELS, GONE or OK EMPTY; 0.3 doesn't count the 1.5 ID frame's copies, so its green light and station mode miss 1.5 drives) |
 | `SEND <baud> <stopbits> <hex> <gapMs>` | `OK` after the last stop bit has gone and the line has then been held at full supply for gapMs (plus about one bit). Baud 70–20000, stop bits 1–2, 1–4096 bytes (hex, either case), gap 0–60000. Station 0.3: `OK EMPTY` instead if the socket was empty at any point during it (below) |
 | `SENSE` | `SENSE <raw 0-4095> <millivolts>` on A0 (average of 64) |
 | `SHOW` | `OK` (replays the station's start-up light show) |
@@ -42,6 +42,8 @@ USB serial (CDC, any baud setting). One line in (end with `\n`), one line out.
 | ~0.4 s | Kept until a WAIT reports it, once (`DRIVE <hex>`; `DRIVE` alone if nothing was heard). Box flashes green if it heard an ID, blinks red if not |
 
 A drive counts as gone only after 0.5 s near the empty level, so a drive whose LEDs go dark for a moment isn't "plugged in" again (the signal restarts a running Pulse). A plug-in during a SEND or ASK, or within 1 s after one, isn't introduced: the app is already talking to that drive (a send that found the socket empty doesn't count). `PLUG_MARGIN` and the 16-count swing are guesses until the bench readings (`LEVELS`, logged by the app after each plug-in).
+
+**Finding a drive that goes in (station 0.5, built 20 Oct 2026, simulated only).** While the socket is empty the box sends one 5 ms dip every 100 ms; a drive reads ~750 on A0 in a dip, an empty socket ~0, so a drive is found within ~0.1 s whatever it draws at full supply, and then gets the plug-in signal as before (the old current check still works too). Every engine ignores single 5 ms dips (they're the same as the in-step dips). Why: on the first bench run with station 0.4, sends found the drive (by their dips) but no plug-in was ever reported.
 
 **Knowing the socket is empty (station 0.3, built 18 Oct 2026, simulated only).** Found on the bench 18 Oct 2026: a settings send to an empty socket went ahead and the app saved it in the register. In a dip (transistor off) the drive's current has to go through the diode, so with a drive in the socket's ground sits ~0.6 V up (~750 counts on A0), lit or dark; with nothing in, it stays at ~0. At full supply a dark drive can read close to an empty socket, so dips are what settle it:
 - Between commands: 0.5 s near the empty level, then one 5 ms check dip. A drive still there (dark) is kept and the checks spread out (0.5, 1, 2, then every 4 s) until it reads clearly lit or clearly lower than "empty" again; nothing there: `GONE` for the next WAIT.

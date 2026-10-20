@@ -302,7 +302,10 @@ export class Station {
   }
 
   async hello() {
-    const reply = await this.command('HELLO');
+    let reply = await this.command('HELLO');
+    // Choosing the station again while it was answering a WAIT: that answer (NONE) can still
+    // arrive first, so look a few lines further for the hello.
+    for (let i = 0; i < 3 && !reply.startsWith('SYNAPTO-STATION'); i++) reply = await this.readLine(1500).catch(() => '');
     if (!reply.startsWith('SYNAPTO-STATION')) {
       throw new StationError("That port isn't a Synapto station. Pick the XIAO box's port instead.");
     }

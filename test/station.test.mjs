@@ -69,6 +69,19 @@ test('station: HELLO, bad commands and bad SENDs are explained', async () => {
   await assert.rejects(bad.connect(), /isn't a Synapto station/);
 });
 
+test('choosing the station again: a WAIT answer from before is skipped, the hello still found', async () => {
+  const sim = new SimStation(null);
+  const st = new Station(sim);
+  const write = sim.write.bind(sim);
+  let first = true;
+  sim.write = async (b) => {          // the box was still answering a WAIT from the last connection
+    await write(b);
+    if (first) { first = false; sim.rx.unshift(...Buffer.from('NONE\n')); }
+  };
+  await st.connect();
+  assert.equal(st.version, '0.2');
+});
+
 test('a late reply from a timed-out command is not taken as the next answer', async () => {
   const { st } = await station(null);
   st.transport.rx.push(...Buffer.from('OK\n')); // the box answered a SEND after the app gave up

@@ -241,15 +241,36 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   // goes once the current WAIT ends (1 s at most).
   const WAIT_MS = 1000;
   const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  // The box's USB connection went away (unplugged, or restarting after new firmware was
+  // copied onto it): stop talking to it and say so once.
+  function stationLost(st) {
+    if (fs.station !== st) return;
+    fs.station = null;
+    fs.socket = null;
+    st.close().catch(() => {});
+    $('fsStatus').textContent = 'The station was disconnected (unplugged, or restarting after new firmware). Plug it in, then Choose the station again.';
+    log('Station disconnected');
+    refresh();
+  }
+  if (typeof navigator !== 'undefined' && navigator.serial) {
+    navigator.serial.addEventListener('disconnect', (ev) => {
+      if (fs.station && fs.station.transport.port === ev.target) stationLost(fs.station);
+    });
+  }
+
   async function watch(st) {
+    let lastError = '';
     while (fs.station === st) {
       if (fs.busy) { await pause(200); continue; }
       let bytes;
       try {
         bytes = await st.wait(WAIT_MS);
+        lastError = '';
       } catch (e) {
         if (fs.station !== st) return;
-        log(`Station: ${e.message}`);
+        if (st.transport.lost) { stationLost(st); return; }
+        if (e.message !== lastError) log(`Station: ${e.message}`);   // once, not every second
+        lastError = e.message;
         await pause(WAIT_MS);
         continue;
       }
