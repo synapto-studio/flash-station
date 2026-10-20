@@ -1,7 +1,8 @@
 // The Routines tab: live previews of what a Core or a Pulse drive's lights will do, using the
 // same maths as the firmware (js/preview-core.js, js/preview-pulse.js). No audio, no hardware.
 // Pulse plays a built-in drum and bass demo through the simulated mic. Next to today's engine,
-// the new player (js/player.js) plays the same look rebuilt as recipes (js/animations.js).
+// the new player (js/player.js) plays the same look rebuilt as recipes (js/animations.js). The
+// Animation lab (js/lab-tab.js) plays recipes pasted from a Claude session.
 
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
@@ -12,6 +13,7 @@ import { defaultProfile, makeProfile, drawnLeds, groupOf } from './profiles.js';
 import { resolveRoutine } from './library.js';
 import { Show, makeDrive, pack } from './player.js';
 import { coreEngine, coreDrift, pulseStartup, pulseAmbient, heartbeat, heartbeatToday, pulseMusic } from './animations.js';
+import { initAnimationLab } from './lab-tab.js';
 
 const CORE_FIELDS = [
   ['BRIGHTNESS', 'Overall brightness (0–255)', 1, 255],
@@ -52,7 +54,7 @@ export function initRoutinesTab({ $, el, state }) {
   let t = 0, playing = true, speed = 1, last = null, pulseRun = null, pulseDirty = true, pulseStage1 = null;
 
   const lensEls = [], lensEls2 = [];
-  let playerShow = null;
+  let playerShow = null, lab = null;
 
   // One side of the drive, front view, drawn from the drive profile (js/profiles.js): y is mm above
   // the top of the USB A connector, x is mm from the centre line. The profile lists only LEDs whose
@@ -64,6 +66,7 @@ export function initRoutinesTab({ $, el, state }) {
     buildBoardIn($('rtBoard'), lensEls);
     buildBoardIn($('rtBoard2'), lensEls2);
     playerShow = null;
+    if (lab) lab.refresh();
   }
   function buildBoardIn(board, lensEls) {
     const spots = drawnLeds(profile[family]);
@@ -195,14 +198,15 @@ export function initRoutinesTab({ $, el, state }) {
     $('rtRows').textContent = family === 'core' ? 'Timeline rows, top of the drive first: the upper LED, then the lower pair.' : 'Timeline rows, top of the drive first: top, middle, then the bottom pair.';
   }
 
+  // Lights the drawn LEDs: px is each LED's [r, g, b].
+  const light = (els, px) => px.forEach((c, i) => {
+    if (!els[i]) return;
+    els[i].style.background = Math.max(...c) === 0 ? '' : css(c);
+    els[i].style.boxShadow = Math.max(...c) === 0 ? '' : `0 0 ${8 + 18 * Math.max(...c) / 255}px ${css(c)}`;
+  });
   function draw() {
     const len = length();
     if (t > len) t = 0;
-    const light = (els, px) => px.forEach((c, i) => {
-      if (!els[i]) return;
-      els[i].style.background = Math.max(...c) === 0 ? '' : css(c);
-      els[i].style.boxShadow = Math.max(...c) === 0 ? '' : `0 0 ${8 + 18 * Math.max(...c) / 255}px ${css(c)}`;
-    });
     light(lensEls, frameAt(t));
     light(lensEls2, playerFrameAt(t));
     $('rtClock').textContent = `${(t / 1000).toFixed(2)} s`;
@@ -320,7 +324,7 @@ export function initRoutinesTab({ $, el, state }) {
     buildProfileEditor(); buildBoard(); draw();
   }
 
-  function changed() { pulseDirty = true; playerShow = null; note(); drawStrip(); draw(); }
+  function changed() { pulseDirty = true; playerShow = null; note(); drawStrip(); draw(); if (lab) lab.refresh(); }
 
   function setFamily(f) {
     family = f;
@@ -332,6 +336,7 @@ export function initRoutinesTab({ $, el, state }) {
     if (f === 'pulse' && !pulseStage1) frameAt(0);
     note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {});
     loadProfiles().then(useProfile).catch(() => {});
+    if (lab) lab.reload();
   }
 
   function tick(now) {
@@ -365,7 +370,7 @@ export function initRoutinesTab({ $, el, state }) {
       const p = makePalette(family, $('rtPalName').value, S[family]);
       await state.library.savePalette(p);
       $('rtPalName').value = '';
-      await loadPalettes(p.name); await loadRoutines();
+      await loadPalettes(p.name); await loadRoutines(); lab.reload();
       palMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
     } catch (e) { palMsg(e.message); }
   });
@@ -419,8 +424,9 @@ export function initRoutinesTab({ $, el, state }) {
   });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); }); // the strip can't be sized while hidden
-  window.addEventListener('resize', () => { if (!$('p-routines').hidden) drawStrip(); });
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); }); // the strip can't be sized while hidden
+  window.addEventListener('resize', () => { if (!$('p-routines').hidden) { drawStrip(); lab.redrawStrip(); } });
+  lab = initAnimationLab({ $, el, state, tab: { family: () => family, setFamily, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light } });
   setFamily('core');
   requestAnimationFrame(tick);
 }

@@ -13,6 +13,8 @@ One small **player** plays every animation. An animation is a short **recipe**: 
 
 | Field | Meaning |
 |---|---|
+| `name` | What it's called in the library (the file is `animations/<board>-<name>.json`) |
+| `notes` | Optional: what it should look like, in words (not sent to the drive) |
 | `board` | `core` (6 LEDs), `pulse` (8) or `any` |
 | `timing` | `ms` (times in milliseconds, steps of 10) or `beats` (times in beats, steps of 1/16; a bar is 4 beats) |
 | `once` | `true`: a one-shot (start-up, song moment) that ends when its last timed layer ends, then the next section plays. `false`: loops (a loop with timed layers repeats every time the last one ends) |
@@ -67,6 +69,25 @@ Packed by `pack()` and read by `unpack()`; the name and board are kept outside t
 - `ease(x) = x·x·(765 − 2x) / 65025`; progress through a length is `t × 255 / len`; `mix(a, b, k) = (a(255 − k) + b·k) / 255`; going down, `a − (a − b)·k / 255` (never divide a negative number). The `exp` curve is the 24-entry table in `js/player.js` (exp(−x) in quarters, as the plug-in animation in pulsetest 1.5+).
 - Heights are 0–10,000 from the plug; recipe positions × 100.
 - Check against `js/player.js` frame for frame, like `run_equiv.js` does for today's routine.
+
+## Making an animation in a session (the Animation lab, R3)
+
+Jonny describes the animation in a Claude Code session ("on the drop: white fill from the plug up, then red strobes on every beat for 2 bars"). Claude:
+
+1. Writes the recipe to a file in the scratchpad, using the moves above. Say in `notes` what it should look like. Times are ms unless `"timing": "beats"`; music-following ones (Pulse only) are in beats, 4 to a bar.
+2. Makes a preview clip: `node tools/animation-clip.mjs recipe.json --out drop.mp4` (add `--music demo --start 8` for a beat-timed one, `--colours "red=0,70,255 orange=0,255,230 white=190,235,255"` for a colour set: the named Pulse sets are in the firmware repo's `pulsetest/colour_sets.py`, as white, red, orange; `--then builtin` to see a start-up run into the ambient look). It checks the recipe first and prints the lab's plain error if it's wrong, then films the lab: the drive, its timeline and a playhead, with the music's sound. It also writes a `.png` still.
+3. Sends the `.mp4` (SendUserFile) and the recipe in a ```` ```json ```` block, with its size in bytes.
+4. Changes it when Jonny says "slower" (longer `every`/`for`), "more orange" (colour slot 2, or a `tint` layer), and sends a new clip.
+
+Jonny copies the recipe (the whole message is fine: the lab finds the recipe in it) into **Routines → Animation lab**, checks it in his own colours and on his drive's profile, and saves it. The lab:
+
+- reads it however it was copied: a ```` ```json ```` block with words around it, curly quotes, `//` comments, a comma before `}` or `]`, names without quotes;
+- shows anything else as a plain error with where it is ("Line 9: a comma is missing before "rise"", "Step 2, layer 1 (pulse): "color" isn't a setting of "pulse" (did you mean "colour"?)"), with a **Show me where** button; the error can be pasted back into the session;
+- warns about recipes that work but probably aren't meant (times of 20 ms or less in an ms recipe, beat timing on a Core);
+- plays it on the drawing from the drive profile, in the colours from Tune it or a saved colour set; a beat-timed one with a steady beat (any BPM), the demo track or a song clip (picked on the computer, never uploaded or saved), heard through the Pulse's simulated mic in a chosen room, from "Start at", optionally with sound; a one-shot timed in ms can run into the built-in ambient or a saved loop ("Then");
+- saves it to the library's `animations/` folder as `<board>-<name>.json` (the same name replaces it), one layer per line, steps kept as steps. Saved ones open again from "Start from", next to the built-in recipes.
+
+`js/lab.js` reads and checks pasted text (`readRecipe`) and writes the files; `js/lab-tab.js` is the lab on screen; `test/lab.test.mjs` checks the forgiving reading, every error message and the saving.
 
 ## Today's looks as recipes (R2 results, 20 Oct 2026)
 

@@ -104,6 +104,19 @@ export function heartbeat() {
   };
 }
 
+// An example for the Animation lab (R3), from the roadmap's description: "on the drop: white
+// fill from the plug up, then red strobes on every beat for 2 bars". A one-shot in beats.
+export function dropExample() {
+  return {
+    type: 'animation', name: 'Drop (example)', board: 'pulse', timing: 'beats', once: true,
+    notes: 'On the drop: white fills from the plug up over one bar, then red strobes on every beat for 2 bars.',
+    steps: [
+      { for: 4, layers: [{ move: 'fill', leds: 'all', colour: WHITE, level: 255, from: -20, to: 120, edge: 30, curve: 'in' }] },
+      { for: 8, layers: [{ move: 'pulse', leds: 'all', colour: RED, low: 0, high: 255, every: 1, rise: 0, fall: 0.5, down: 'out' }] },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------- today's heartbeat, for comparing
 // The plug-in preview's drive half (firmware repo station/preview/plugin_animation.html, Jonny's
 // look of 18 Oct 2026; the numbers are in docs/STATION-PROTOCOL.md). ct: ms into the heartbeat

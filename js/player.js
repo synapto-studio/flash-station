@@ -63,35 +63,86 @@ function quant(v, step, where, name, max) {
   if (!isNum(v) || v < 0) fail(where, `"${name}" must be a number, 0 or more (got ${JSON.stringify(v)}).`);
   const q = Math.round(v / step);
   if (q > max) fail(where, `"${name}" is too long (${v}).`);
+  if (q === 0 && v > 0) {
+    const ms = step === STEP.ms || step === HIT_STEP.ms;
+    fail(where, `"${name}" is ${v}, which is under one step (${ms ? `${step} ms` : `1/${Math.round(1 / step)} beat`}) and rounds to 0.${ms ? ' Times are in ms unless the recipe says "timing": "beats".' : ''}`);
+  }
   return q;
 }
+
+// " (did you mean "colour"?)" for a word that's close to one of the right ones, else "".
+const LIKELY = { color: 'colour', colors: 'colours', duration: 'for', length: 'for', start: 'at', delay: 'at', period: 'every', speed: 'every', brightness: 'level', led: 'leds', strobe: 'pulse', flash: 'pulse' };
+function apart(a, b) { // how many letters to change, add or remove to turn a into b
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+function didYouMean(word, options) {
+  const w = String(word).toLowerCase();
+  let best = options.includes(LIKELY[w]) ? LIKELY[w] : null;
+  if (!best) {
+    const near = options.map((o) => [o, apart(w, o.toLowerCase())]).sort((x, y) => x[1] - y[1])[0];
+    if (near && near[1] <= (w.length <= 4 ? 1 : 2)) best = near[0];
+  }
+  return best ? ` (did you mean "${best}"?)` : '';
+}
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'notes', 'layers', 'steps'];
 
 // The canonical recipe: steps flattened into layers with absolute `at`, every setting filled
 // in and rounded to what the bytes hold. pack() and unpack() agree on this form exactly.
 export function normalise(recipe) {
-  if (!recipe || typeof recipe !== 'object') throw new RecipeError('A recipe is an object like { "type": "animation", "layers": [...] }.');
+  if (!isObj(recipe)) throw new RecipeError('A recipe is an object like { "type": "animation", "layers": [...] }.');
+  if (recipe.type !== undefined && recipe.type !== 'animation') fail('Recipe', `"type" must be "animation" (got ${JSON.stringify(recipe.type)}).`);
+  for (const k of Object.keys(recipe)) if (!RECIPE_KEYS.includes(k)) fail('Recipe', `"${k}" isn't part of a recipe${didYouMean(k, RECIPE_KEYS)}. A recipe has ${RECIPE_KEYS.join(', ')}.`);
+  if (recipe.name !== undefined && typeof recipe.name !== 'string') fail('Recipe', '"name" must be text in quotes, like "Drop".');
   const board = recipe.board || 'any';
   if (!['core', 'pulse', 'any'].includes(board)) fail('Recipe', `board must be "core", "pulse" or "any" (got "${board}").`);
   const timing = recipe.timing || 'ms';
   if (!STEP[timing]) fail('Recipe', `timing must be "ms" or "beats" (got "${timing}").`);
+  if (recipe.once !== undefined && typeof recipe.once !== 'boolean') fail('Recipe', '"once" must be true or false.');
   const once = !!recipe.once;
-  const flat = [];
-  for (const l of recipe.layers || []) flat.push({ ...l });
+  const list = (v, where, what) => {
+    if (v === undefined) return [];
+    if (!Array.isArray(v)) fail(where, `"${what}" must be a list in square brackets: [ ... ].`);
+    return v;
+  };
+  const layerObj = (l, where) => { if (!isObj(l)) fail(where, 'each layer is written in curly brackets, like { "move": "glow", "colour": 1 }.'); };
+  const flat = [], whereOf = [];
+  list(recipe.layers, 'Recipe', 'layers').forEach((l, li) => { layerObj(l, `Layer ${li + 1}`); flat.push({ ...l }); whereOf.push(`Layer ${li + 1}`); });
   let stepAt = 0;
-  (recipe.steps || []).forEach((s, si) => {
-    if (!isNum(s.for) || s.for <= 0) fail(`Step ${si + 1}`, 'each step needs a length ("for") more than 0.');
-    for (const l of s.layers || []) flat.push({ ...l, at: stepAt + (l.at || 0), for: l.for === undefined ? s.for : l.for });
+  list(recipe.steps, 'Recipe', 'steps').forEach((s, si) => {
+    const where = `Step ${si + 1}`;
+    if (!isObj(s)) fail(where, 'each step is written in curly brackets, like { "for": 4, "layers": [ ... ] }.');
+    for (const k of Object.keys(s)) if (k !== 'for' && k !== 'layers') fail(where, `"${k}" isn't part of a step${didYouMean(k, ['for', 'layers'])}. A step has "for" (its length) and "layers".`);
+    if (!isNum(s.for) || s.for <= 0) fail(where, 'each step needs a length ("for") more than 0.');
+    const ls = list(s.layers, where, 'layers');
+    if (!ls.length) fail(where, 'it has no layers. Give it at least one, like { "move": "glow", "colour": 0 } for dark.');
+    ls.forEach((l, li) => {
+      const at = `${where}, layer ${li + 1}`;
+      layerObj(l, at);
+      if (l.at !== undefined && (!isNum(l.at) || l.at < 0)) fail(at, `"at" must be a number, 0 or more (got ${JSON.stringify(l.at)}).`);
+      const f = { ...l, at: stepAt + (l.at || 0) };
+      if (l.for === undefined && !(MOVES[l.move] && MOVES[l.move].ownLength)) f.for = s.for; // hits keep their own length
+      flat.push(f);
+      whereOf.push(at);
+    });
     stepAt += s.for;
   });
-  if (!flat.length) fail('Recipe', 'it has no layers.');
+  if (!flat.length) fail('Recipe', 'it has no layers. Add "layers": [ ... ] (or "steps" for a one-shot).');
   if (flat.length > MAX_LAYERS) fail('Recipe', `it has ${flat.length} layers; the most is ${MAX_LAYERS}.`);
   const out = { type: 'animation', name: String(recipe.name || 'Untitled'), board, timing, once, layers: [] };
   const step = STEP[timing], unit = (q) => +(q * step).toFixed(4);
   let prev = null;
   flat.forEach((l, i) => {
-    const where = `Layer ${i + 1}${l.move ? ` (${l.move})` : ''}`;
+    const where = `${whereOf[i]}${typeof l.move === 'string' ? ` (${l.move})` : ''}`;
     const m = MOVES[l.move];
-    if (!m) fail(where, `unknown move "${l.move}". Moves: ${Object.keys(MOVES).join(', ')}.`);
+    if (l.move === undefined) fail(where, `it has no "move". Moves: ${Object.keys(MOVES).join(', ')}.`);
+    if (!m) fail(where, `unknown move ${JSON.stringify(l.move)}${didYouMean(l.move, Object.keys(MOVES))}. Moves: ${Object.keys(MOVES).join(', ')}.`);
     if (m.beatsOnly && timing !== 'beats') fail(where, `"${l.move}" follows the music, so the recipe's timing must be "beats".`);
     const c = { move: l.move, leds: normLeds(l.leds, board, where) };
     // when it starts: at the start, when the layer before ends, with it, or at a time of its own
@@ -116,8 +167,8 @@ export function normalise(recipe) {
       c[name] = v;
     }
     checkMove(c, where);
-    const known = Object.keys(c).concat('for');
-    for (const k of Object.keys(l)) if (!known.includes(k)) fail(where, `"${k}" isn't a setting of "${l.move}".`);
+    const known = ['move', 'leds', 'at', ...(m.ownLength ? [] : ['for']), ...m.params.map((p) => p[0]), ...(m.style || []).map((p) => p[0])];
+    for (const k of Object.keys(l)) if (!known.includes(k)) fail(where, `"${k}" isn't a setting of "${l.move}"${didYouMean(k, known)}. Its settings: ${known.slice(1).join(', ')}.`);
     const dur = m.ownLength ? hitsLength(c.hits) : len;
     prev = { at, end: dur === null ? null : +(at + dur).toFixed(4) };
     out.layers.push(c);
@@ -167,6 +218,7 @@ function normParam(v, type, name, where, timing) {
     }
     case 'pct': {
       if (v === undefined) fail(where, `"${name}" is needed (% of the drive).`);
+      if (!isNum(v)) fail(where, `"${name}" must be a number (% of the drive, 1 to 255).`);
       return int(Math.round(v), 1, 255);
     }
     case 'hits': {
