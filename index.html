@@ -222,17 +222,34 @@
           <button type="button" role="radio" id="rtFam-core" aria-checked="true"><strong>Core</strong><span>6 LEDs, motor-start look</span></button>
           <button type="button" role="radio" id="rtFam-pulse" aria-checked="false"><strong>Pulse</strong><span>8 LEDs, follows the music</span></button>
         </div>
-        <div class="rt-stage"><div class="rt-board" id="rtBoard"></div><div class="rt-clock" id="rtClock">0.00 s</div></div>
+        <div class="rt-stage">
+          <div class="rt-pair">
+            <figure><figcaption>Today's engine</figcaption><div class="rt-board" id="rtBoard"></div></figure>
+            <figure><figcaption>New player, from a recipe</figcaption><div class="rt-board" id="rtBoard2"></div></figure>
+          </div>
+          <div class="rt-clock" id="rtClock">0.00 s</div>
+        </div>
         <div class="rt-controls">
           <button class="btn" id="rtPlay" type="button">Pause</button>
           <button class="btn" id="rtRestart" type="button">Power on again</button>
           <label>Speed <select id="rtSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
           <label id="rtRoomWrap" hidden>Room <select id="rtRoom"><option value="silence">Silence</option><option value="home">Home</option><option value="bar">Bar</option><option value="club" selected>Club</option><option value="rig">Big rig</option></select></label>
         </div>
-        <canvas id="rtStrip" class="rt-strip" aria-label="Colour timeline"></canvas>
+        <p class="rt-label">Today's engine</p>
+        <canvas id="rtStrip" class="rt-strip" aria-label="Colour timeline, today's engine"></canvas>
+        <p class="rt-label">New player</p>
+        <canvas id="rtStrip2" class="rt-strip" aria-label="Colour timeline, new player"></canvas>
         <input id="rtScrub" class="rt-scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub through the timeline">
         <p class="note" id="rtRows"></p>
         <p class="note" id="rtNote"></p>
+        <p class="note" id="rtPlayerNote"></p>
+        <h2>Plug-in heartbeat</h2>
+        <p class="note">What a drive does on a Flash Station after the white handshake pulse: 12 heartbeats out from the socket, then a flow up and back, every 38.6 s. Top: the plug-in preview. Bottom: the new player.</p>
+        <p class="rt-label">Plug-in preview</p>
+        <canvas id="rtHbToday" class="rt-strip" aria-label="Heartbeat timeline, plug-in preview"></canvas>
+        <p class="rt-label">New player</p>
+        <canvas id="rtHbPlayer" class="rt-strip" aria-label="Heartbeat timeline, new player"></canvas>
+        <p class="note" id="rtHbNote"></p>
         <h2>Tune it</h2>
         <div class="rt-fields" id="rtFields"></div>
         <button class="btn quiet" id="rtReset" type="button">Reset to defaults</button>

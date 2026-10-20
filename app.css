@@ -242,6 +242,10 @@ details.small > *:not(summary) { margin-top: 10px; }
 /* routines preview */
 .rt-stage { background: #121010; border: 1px solid var(--edge); border-radius: 12px; padding: 24px 16px 12px; margin: 16px 0; }
 .rt-board { position: relative; width: 100%; margin: 0 auto; }
+.rt-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.rt-pair figure { margin: 0; min-width: 0; }
+.rt-pair figcaption { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.rt-label { margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
 .rt-pcb { position: absolute; left: 50%; transform: translateX(-50%); background: #1d1a18; border: 1px solid var(--edge); border-radius: 6px 6px 0 0; }
 .rt-plug { position: absolute; left: 50%; transform: translateX(-50%); background: #8c857e; border-radius: 0 0 2px 2px; }
 .rt-lens { position: absolute; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 50%; background: #2a2624; border: 2px solid #d9d4cc33; }
