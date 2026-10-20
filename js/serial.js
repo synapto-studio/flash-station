@@ -97,7 +97,13 @@ export class WebSerialTransport {
     this.buf = [];
   }
 
+  // The device went away while open (unplugged, or the station restarting after new firmware).
+  get lost() {
+    return this.isOpen && (!this.port.readable || !this.port.writable);
+  }
+
   async write(bytes) {
+    if (!this.port.writable) throw new Error("The USB connection was lost.");
     const w = this.port.writable.getWriter();
     try {
       await w.write(Uint8Array.from(bytes));

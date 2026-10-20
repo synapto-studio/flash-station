@@ -9,7 +9,7 @@
 import { PulseImage } from './engines.js';
 import {
   Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
-  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen,
+  coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen, canProbe,
   canTellSocket, afterSend, GONE,
 } from './station.js';
 import { encodeCard } from './idcard.js';
@@ -103,8 +103,9 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
     $('fsSettings').textContent = unplugged ? 'Plug the drive in' : `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
-    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect']) $(id).disabled = fs.busy;
+    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect', 'fsProbe']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
+    $('fsProbe').hidden = !fs.station || !canProbe(fs.station.version);
     $('fsSimSocket').hidden = !(fs.station && fs.station.transport.simulated && listens);
     $('fsPlug').disabled = fs.busy;
     $('fsUnplug').disabled = fs.busy || !(fs.station && fs.station.transport.drive);
@@ -241,15 +242,36 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   // goes once the current WAIT ends (1 s at most).
   const WAIT_MS = 1000;
   const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  // The box's USB connection went away (unplugged, or restarting after new firmware was
+  // copied onto it): stop talking to it and say so once.
+  function stationLost(st) {
+    if (fs.station !== st) return;
+    fs.station = null;
+    fs.socket = null;
+    st.close().catch(() => {});
+    $('fsStatus').textContent = 'The station was disconnected (unplugged, or restarting after new firmware). Plug it in, then Choose the station again.';
+    log('Station disconnected');
+    refresh();
+  }
+  if (typeof navigator !== 'undefined' && navigator.serial) {
+    navigator.serial.addEventListener('disconnect', (ev) => {
+      if (fs.station && fs.station.transport.port === ev.target) stationLost(fs.station);
+    });
+  }
+
   async function watch(st) {
+    let lastError = '';
     while (fs.station === st) {
       if (fs.busy) { await pause(200); continue; }
       let bytes;
       try {
         bytes = await st.wait(WAIT_MS);
+        lastError = '';
       } catch (e) {
         if (fs.station !== st) return;
-        log(`Station: ${e.message}`);
+        if (st.transport.lost) { stationLost(st); return; }
+        if (e.message !== lastError) log(`Station: ${e.message}`);   // once, not every second
+        lastError = e.message;
         await pause(WAIT_MS);
         continue;
       }
@@ -269,12 +291,14 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       }
       if (!heard) {
         log('A drive was plugged in but didn\'t say who it is');
-        $('fsFindNote').textContent = "A drive was plugged in but didn't say who it is. Only coretest 1.4 and pulsetest 1.1 introduce themselves: use Find, or pick it in the list.";
+        $('fsFindNote').textContent = "A drive was plugged in but didn't say who it is. Only coretest 1.4 and pulsetest 1.4 or later introduce themselves: use Find, or pick it in the list.";
       } else if (heard.blank) {
         log('A drive with no ID card was plugged in');
         $('fsFindNote').textContent = 'A drive was plugged in, but it has no ID card. Give it one at the Initialisation Station.';
       } else {
-        log(`Plugged in: ${heard.label} (${heard.board})`);
+        // 1.5 drives also say what lighting they have (checking it against the register: roadmap task 7)
+        const fp = heard.fingerprint == null ? '' : `, lighting fingerprint ${heard.fingerprint.toString(16).toUpperCase().padStart(4, '0')}`;
+        log(`Plugged in: ${heard.label} (${heard.board})${fp}`);
         $('fsFindNote').textContent = '';
         identified(heard, 'plug');
       }
@@ -323,9 +347,22 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (!state.library) await setLibrary(new Library(new MemoryStore('Demo library (not saved)')));
       if (!sendable().some((d) => d.family === 'pulse')) await demoDrive('pulse');
       if (!sendable().some((d) => d.family === 'core')) await demoDrive('core');
-      await useStation(new SimStation(null, { version: '0.3' }), 'Simulated station');
+      await useStation(new SimStation(null, { version: '0.6' }), 'Simulated station');
     } catch (e) {
       $('fsStatus').textContent = e.message;
+    }
+  });
+
+  // Bench numbers (station 0.6): what A0 reads at full supply and in one 5 ms dip. Measure with
+  // the socket empty, then with each drive in.
+  $('fsProbe').addEventListener('click', async () => {
+    const st = fs.station;
+    if (!st) return;
+    try {
+      const p = await st.probe();
+      log(`Socket measured: full ${p.full}, in a dip ${p.min}–${p.max} (average ${p.avg}, at the end ${p.end})`);
+    } catch (e) {
+      log(`Socket measured: ${e.message}`);
     }
   });
 

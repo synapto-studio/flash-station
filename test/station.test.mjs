@@ -12,7 +12,7 @@ import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
 import {
   testPlan, patchPlan, fullPlan, planMs, Station, wake,
   crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
-  parseHello, helloAnswer, canListen, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
+  parseHello, helloAnswer, canListen, canProbe, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
 } from '../js/station.js';
 import { encodeCard } from '../js/idcard.js';
 import { SimStation, SimDrive, SimCoreDrive, SIM_LEVELS } from '../js/sim-station.js';
@@ -67,6 +67,19 @@ test('station: HELLO, bad commands and bad SENDs are explained', async () => {
   const queue = [...Buffer.from('HELLO\n')];
   const bad = new Station({ open: async () => {}, close: async () => {}, write: async () => {}, read: async () => Uint8Array.of(queue.shift() ?? 10) });
   await assert.rejects(bad.connect(), /isn't a Synapto station/);
+});
+
+test('choosing the station again: a WAIT answer from before is skipped, the hello still found', async () => {
+  const sim = new SimStation(null);
+  const st = new Station(sim);
+  const write = sim.write.bind(sim);
+  let first = true;
+  sim.write = async (b) => {          // the box was still answering a WAIT from the last connection
+    await write(b);
+    if (first) { first = false; sim.rx.unshift(...Buffer.from('NONE\n')); }
+  };
+  await st.connect();
+  assert.equal(st.version, '0.2');
 });
 
 test('a late reply from a timed-out command is not taken as the next answer', async () => {
@@ -227,6 +240,28 @@ test('hello answer: 43 copies of 5A + ID card bytes 5-8 + CRC-8, read back as th
   assert.deepEqual(parseHello(helloAnswer(null)), { blank: true, copies: 43 });
   assert.equal(parseHello(new Uint8Array(0)), null);
   assert.equal(parseHello(Uint8Array.of(0x5a, 0x43, 1, 0, 0x10, 0)), null, 'a bad CRC-8 is not an answer');
+});
+
+test('hello answer, 1.5 drives: the frame also carries the lighting fingerprint', () => {
+  const a = helloAnswer(card(4, 'Pulse A2', 'P'), 3, 0x4112);
+  assert.equal(a.length, 3 * 8);
+  const body = [0x50, 0x04, 0x00, 0x22, 0x12, 0x41];
+  assert.equal(hex(a.subarray(0, 8)), hex([0x5a, ...body, crc8(body)]));
+  assert.deepEqual(parseHello(a), { blank: false, copies: 3, number: 4, family: 'pulse', label: 'P-0004', board: 'Pulse A2', fingerprint: 0x4112 });
+  assert.deepEqual(parseHello(helloAnswer(null, 3, 0xffff)), { blank: true, copies: 3, fingerprint: 0xffff }, 'no ID card');
+  assert.equal(parseHello(helloAnswer(card(4, 'Pulse A2', 'P'), 3, 0xffff)).fingerprint, 0xffff, 'no routine (an update was cut off)');
+  // Fingerprints whose low byte happens to be the short frame's CRC-8 still read as the long frame.
+  for (let fp = 0; fp < 0x10000; fp += 0x101) {
+    const r = parseHello(helloAnswer(card(9), 34, fp));
+    assert.equal(r.fingerprint, fp, `fingerprint ${fp.toString(16)}`);
+    assert.equal(r.copies, 34);
+  }
+  // 1 in 65,536: low byte the short CRC-8 and high byte 5A. The ID still reads; its fingerprint is lost.
+  const short = crc8([0x43, 0x09, 0x00, 0x10]);
+  const tricky = parseHello(helloAnswer(card(9), 3, short | (0x5a << 8)));
+  assert.deepEqual([tricky.label, tricky.copies], ['C-0009', 3]);
+  // A short frame followed straight by its next copy is not read as a long one.
+  assert.deepEqual(parseHello(helloAnswer(card(9), 3)), { blank: false, copies: 3, number: 9, family: 'core', label: 'C-0009', board: 'Core A' });
 });
 
 test('hello answer: noise and damaged copies are skipped, the copy heard most wins', () => {
@@ -443,4 +478,14 @@ test('station 0.2 still works: no SOCKET, sends to an empty socket answer OK as 
   const r = await st.run(testPlan([1, 2, 3]));
   assert.ok(r.completed);
   assert.equal(await st.wait(30), null);
+});
+
+test('station 0.6: PROBE measures the socket (empty vs a drive in)', async () => {
+  const empty = new Station(new SimStation(null, { version: '0.6' }));
+  await empty.connect();
+  assert.deepEqual(await empty.probe(), { full: 61, min: 4, avg: 6, max: 9, end: 6 });
+  const st = new Station(new SimStation(new SimDrive(oldImage()), { version: '0.6' }));
+  await st.connect();
+  assert.equal((await st.probe()).end, 1030);
+  assert.ok(canProbe('0.6') && !canProbe('0.5'));
 });

@@ -299,6 +299,7 @@ export class SimStation {
     if (name === 'SHOW') return out('OK');
     if (name === 'SOCKET' && this.knowsSocket) return out(this.drive ? 'SOCKET IN' : 'SOCKET EMPTY');
     if (name === 'LEVELS' && this.knowsSocket) return out(this.levels || 'LEVELS NONE');
+    if (name === 'PROBE' && Number(this.version.split('.')[1]) >= 6) return out(this.drive ? 'PROBE 61 120 760 1030 1030' : 'PROBE 61 4 6 9 6');
     if (name === 'WAIT' && this.version !== '0.1') {
       const ms = Number(baud);
       if (!(ms >= 1 && ms <= 60000)) return out('ERR wait must be 1 to 60000 ms');
