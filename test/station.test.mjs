@@ -229,6 +229,28 @@ test('hello answer: 43 copies of 5A + ID card bytes 5-8 + CRC-8, read back as th
   assert.equal(parseHello(Uint8Array.of(0x5a, 0x43, 1, 0, 0x10, 0)), null, 'a bad CRC-8 is not an answer');
 });
 
+test('hello answer, 1.5 drives: the frame also carries the lighting fingerprint', () => {
+  const a = helloAnswer(card(4, 'Pulse A2', 'P'), 3, 0x4112);
+  assert.equal(a.length, 3 * 8);
+  const body = [0x50, 0x04, 0x00, 0x22, 0x12, 0x41];
+  assert.equal(hex(a.subarray(0, 8)), hex([0x5a, ...body, crc8(body)]));
+  assert.deepEqual(parseHello(a), { blank: false, copies: 3, number: 4, family: 'pulse', label: 'P-0004', board: 'Pulse A2', fingerprint: 0x4112 });
+  assert.deepEqual(parseHello(helloAnswer(null, 3, 0xffff)), { blank: true, copies: 3, fingerprint: 0xffff }, 'no ID card');
+  assert.equal(parseHello(helloAnswer(card(4, 'Pulse A2', 'P'), 3, 0xffff)).fingerprint, 0xffff, 'no routine (an update was cut off)');
+  // Fingerprints whose low byte happens to be the short frame's CRC-8 still read as the long frame.
+  for (let fp = 0; fp < 0x10000; fp += 0x101) {
+    const r = parseHello(helloAnswer(card(9), 34, fp));
+    assert.equal(r.fingerprint, fp, `fingerprint ${fp.toString(16)}`);
+    assert.equal(r.copies, 34);
+  }
+  // 1 in 65,536: low byte the short CRC-8 and high byte 5A. The ID still reads; its fingerprint is lost.
+  const short = crc8([0x43, 0x09, 0x00, 0x10]);
+  const tricky = parseHello(helloAnswer(card(9), 3, short | (0x5a << 8)));
+  assert.deepEqual([tricky.label, tricky.copies], ['C-0009', 3]);
+  // A short frame followed straight by its next copy is not read as a long one.
+  assert.deepEqual(parseHello(helloAnswer(card(9), 3)), { blank: false, copies: 3, number: 9, family: 'core', label: 'C-0009', board: 'Core A' });
+});
+
 test('hello answer: noise and damaged copies are skipped, the copy heard most wins', () => {
   const good = helloAnswer(card(7));
   const noisy = Uint8Array.from([0x00, 0x5a, 0x5a, 0x13, ...good]);

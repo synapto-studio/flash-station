@@ -63,10 +63,13 @@ Bench check (Jonny, with `station_0.3.uf2` on the box): plug a drive in with the
 
 ### 7. The drive says what lighting it has (app + pulsetest 1.5, coretest 1.5)
 Task 6 stops the obvious mistake, but the app still only knows what it *sent* (sends from another computer, a send that was heard badly, a drive re-initialised elsewhere). Better: the drive tells the app. Firmware side is the firmware repo's roadmap task 7: the introduction gains a 2-byte lighting fingerprint (Pulse: the trailer's app CRC, which a new colour set changes; Core: CRC-16 of its settings in use).
-- `parseHello` takes the old 6-byte frame and the new 8-byte one.
-- With a fingerprint: work out the fingerprint of what the register says (Pulse: `PulseImage` of the drive's engine and settings; Core: CRC-16 of the packed settings). Same → the card says "Lighting: Glacier (checked with the drive)". Different → try engine defaults, every saved routine and colour set; one matches → correct the register and log "Register corrected: the drive has engine defaults, not glacier"; none → "Lighting: not what the register says. Send settings to set it."
+- [x] `parseHello` takes the old 6-byte frame and the new 8-byte one, and returns `fingerprint`; the Log says "Plugged in: P-0004 (Pulse A2), lighting fingerprint 4112" (20 Oct 2026, with the firmware: pulsetest 1.5, coretest 1.5, station 0.4). `docs/STATION-PROTOCOL.md` has the new frame.
+- [ ] With a fingerprint: work out the fingerprint of what the register says (Pulse: `PulseImage` of the drive's engine and settings; Core: CRC-16 of the packed settings). Same → the card says "Lighting: Glacier (checked with the drive)". Different → try engine defaults, every saved routine and colour set; one matches → correct the register and log "Register corrected: the drive has engine defaults, not glacier"; none → "Lighting: not what the register says. Send settings to set it."
 - Needs the drives re-flashed on the Initialise tab with the new `_full.hex`; older drives just don't get the check.
-Done when: tests cover match, corrected and unknown for Pulse and Core, `docs/STATION-PROTOCOL.md` has the new frame, and headless Chromium shows all three cards.
+Done when: tests cover match, corrected and unknown for Pulse and Core, `docs/STATION-PROTOCOL.md` has the new frame, and headless Chromium shows all three cards. Next session: "Read docs/ROADMAP.md and do task 7 (the fingerprint check)".
+
+### 8. Plug-in animation, bench check (firmware repo roadmap task 8)
+Jonny, with station 0.4 on the box (`station_0.4.uf2`) and a Pulse A2 re-flashed with a pulsetest 1.5 `_full.hex` on the Initialise tab: plug it into the box with the Flash Station tab open. Expect: a short red flash, one white pulse shared by box and drive, the card pops up (Log: "lighting fingerprint …"), then a heartbeat in step with the box and a flow up and back every ~39 s. Copy the "Socket levels" line from the Log (it decides whether the drive can listen dark). Then send a colour set while it beats: red, then the new colours. A Core 1.5 introduces itself (its fingerprint is in the Log) but plays its own animation for now.
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.

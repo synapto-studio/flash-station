@@ -269,12 +269,14 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       }
       if (!heard) {
         log('A drive was plugged in but didn\'t say who it is');
-        $('fsFindNote').textContent = "A drive was plugged in but didn't say who it is. Only coretest 1.4 and pulsetest 1.1 introduce themselves: use Find, or pick it in the list.";
+        $('fsFindNote').textContent = "A drive was plugged in but didn't say who it is. Only coretest 1.4 and pulsetest 1.4 or later introduce themselves: use Find, or pick it in the list.";
       } else if (heard.blank) {
         log('A drive with no ID card was plugged in');
         $('fsFindNote').textContent = 'A drive was plugged in, but it has no ID card. Give it one at the Initialisation Station.';
       } else {
-        log(`Plugged in: ${heard.label} (${heard.board})`);
+        // 1.5 drives also say what lighting they have (checking it against the register: roadmap task 7)
+        const fp = heard.fingerprint == null ? '' : `, lighting fingerprint ${heard.fingerprint.toString(16).toUpperCase().padStart(4, '0')}`;
+        log(`Plugged in: ${heard.label} (${heard.board})${fp}`);
         $('fsFindNote').textContent = '';
         identified(heard, 'plug');
       }

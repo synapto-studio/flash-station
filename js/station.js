@@ -135,19 +135,26 @@ export const coreHelloPlan = () => [coreStep(coreMessage([0x04]), 3500, 'Station
 // low, high, board code), CRC-8 of those 4 bytes; 43 copies in 3 s. The station turns the
 // flicker back into bytes (ASK); the app finds the copies here and takes the one heard most.
 export function parseHello(bytes) {
+  // A frame is 5A, ID card bytes 5-8, CRC-8 of those 4 (coretest 1.4, pulsetest 1.4), or 5A, the
+  // 4 ID bytes, the drive's 2-byte lighting fingerprint (low byte first), CRC-8 of those 6
+  // (pulsetest 1.5, coretest 1.5). Same choice as the station's idCopies when both fit.
   const seen = new Map();
   for (let i = 0; i + 5 < bytes.length; i++) {
     if (bytes[i] !== 0x5a) continue;
-    const id = bytes.slice(i + 1, i + 5);
-    if (crc8(id) !== bytes[i + 5]) continue;
-    const key = hex(id);
+    const shortOk = crc8(bytes.slice(i + 1, i + 5)) === bytes[i + 5];
+    let longOk = i + 7 < bytes.length && crc8(bytes.slice(i + 1, i + 7)) === bytes[i + 7];
+    if (longOk && shortOk && bytes[i + 6] === 0x5a) longOk = false;   // both fit (1 in 256): a short one, the next copy after it
+    if (!longOk && !shortOk) continue;
+    const n = longOk ? 6 : 4;
+    const key = hex(bytes.slice(i + 1, i + 1 + n));
     seen.set(key, (seen.get(key) || 0) + 1);
-    i += 5;
+    i += n + 1;
   }
   if (!seen.size) return null;
   const [key, copies] = [...seen].sort((a, b) => b[1] - a[1])[0];
   const id = Uint8Array.from(key.match(/../g), (x) => parseInt(x, 16));
-  if (id.every((b) => b === 0xff)) return { blank: true, copies };
+  const fp = id.length === 6 ? { fingerprint: id[4] | (id[5] << 8) } : {};
+  if (id.subarray(0, 4).every((b) => b === 0xff)) return { blank: true, copies, ...fp };
   const family = String.fromCharCode(id[0]);
   const number = id[1] | (id[2] << 8);
   return {
@@ -155,15 +162,18 @@ export function parseHello(bytes) {
     family: { C: 'core', P: 'pulse' }[family] || family,
     label: driveLabel(family, number),
     board: BOARDS[id[3]] ? BOARDS[id[3]].code : `board ${id[3]}`,
+    ...fp,
   };
 }
 
 // The bytes a drive with this ID card flickers back (see parseHello): 43 copies after a
-// station hello, 3 when it introduces itself on plug-in.
+// station hello (34 from coretest 1.5, whose frame is longer), 3 when it introduces itself on
+// plug-in. With a fingerprint (a number), the 1.5 frame that carries it.
 export const HELLO_COPIES = 43;
 export const PLUG_COPIES = 3;
-export function helloAnswer(card, copies = HELLO_COPIES) {
-  const id = card ? card.subarray(5, 9) : Uint8Array.of(0xff, 0xff, 0xff, 0xff);
+export function helloAnswer(card, copies = HELLO_COPIES, fingerprint = null) {
+  let id = card ? card.subarray(5, 9) : Uint8Array.of(0xff, 0xff, 0xff, 0xff);
+  if (fingerprint != null) id = Uint8Array.of(...id, fingerprint & 0xff, fingerprint >> 8);
   const one = [0x5a, ...id, crc8(id)];
   return Uint8Array.from(Array.from({ length: copies }, () => one).flat());
 }
