@@ -189,6 +189,8 @@ export const canListen = (version) => versionAtLeast(version, 2);
 export const canTellSocket = (version) => versionAtLeast(version, 3);
 // Station firmware that can measure the socket with one dip (0.6 on): PROBE.
 export const canProbe = (version) => versionAtLeast(version, 6);
+// Station firmware that records the sense wire at each plug-in (0.7 on): TRACE.
+export const canTrace = (version) => versionAtLeast(version, 7);
 // What wait() returns when the drive in the socket has been unplugged (0.3 on).
 export const GONE = 'gone';
 
@@ -363,6 +365,25 @@ export class Station {
     if (!m) throw new StationError(`Unexpected answer from the station: ${reply}`);
     const [full, min, avg, max, end] = m[1].trim().split(/\s+/).map(Number);
     return { full, min, avg, max, end };
+  }
+
+  // The box's recording of the sense wire at the last plug-in (0.7 on): every reading (raw ADC
+  // counts, 0.8 mV each, ~0.1 ms apart) from when it noticed the drive until it stopped listening
+  // for its ID, and where its signal (signalAt) and its listening (listenAt) start. Fetched in
+  // pieces of 1000 readings. Null before the first plug-in.
+  async trace() {
+    const readings = [];
+    for (;;) {
+      const reply = await this.command(`TRACE ${readings.length}`);
+      if (reply === 'TRACE NONE') return null;
+      const m = /^TRACE (\d+) (\d+) (\d+) (\d+)(?: ([0-9A-Fa-f]+))?$/.exec(reply);
+      if (!m || Number(m[4]) !== readings.length || (m[5] || '').length % 3) {
+        throw new StationError(`Unexpected answer from the station: ${reply.slice(0, 40)}…`);
+      }
+      const [total, signalAt, listenAt] = m.slice(1, 4).map(Number);
+      for (let i = 0; i < (m[5] || '').length; i += 3) readings.push(parseInt(m[5].slice(i, i + 3), 16));
+      if (!m[5] || readings.length >= total) return { total, signalAt, listenAt, sampleUs: 100, readings };
+    }
   }
 
   // What the box read on the sense wire at the last plug-in (0.3 on), raw ADC counts: empty

@@ -209,9 +209,28 @@ export class SimCoreDrive {
 }
 
 // Same shape as WebSerialTransport, answering like station firmware 0.2 (0.1 has no ASK or
-// WAIT; 0.3 also knows when its socket is empty: SOCKET, LEVELS, GONE, OK EMPTY).
+// WAIT; 0.3 also knows when its socket is empty: SOCKET, LEVELS, GONE, OK EMPTY; 0.6 has PROBE;
+// 0.7 records each plug-in: TRACE).
 // plugIn() and unplug() stand in for a hand at the socket.
 export const SIM_LEVELS = 'LEVELS 6 30 750 28 72'; // what the emulated box reads (firmware listen_e2e.js)
+
+// What a 0.7 box records at a plug-in (TRACE), made up from the same levels: 20 ms of the drive
+// dark (30), the 150 ms signal (5 ms dips at 750, 5 ms full), then listening: what the drive
+// flickered, 1 ms (10 readings) a bit, lit 72 / dark 28, or 0.4 s dark if it said nothing.
+export function simTrace(heard) {
+  const r = [];
+  const add = (v, n) => { for (let i = 0; i < n; i++) r.push(v); };
+  add(30, 200);
+  const signalAt = r.length;
+  for (let i = 0; i < 15; i++) { add(750, 50); add(30, 50); }
+  const listenAt = r.length;
+  if (!heard.length) add(30, 4000);
+  else {
+    add(72, 100);
+    for (const b of heard) for (const bit of [0, ...Array.from({ length: 8 }, (_, k) => (b >> k) & 1), 1]) add(bit ? 72 : 28, 10);
+  }
+  return { signalAt, listenAt, readings: r };
+}
 
 export class SimStation {
   constructor(drive = null, { version = '0.2' } = {}) {
@@ -226,6 +245,7 @@ export class SimStation {
     this.events = []; // plug-ins ({ heard }) and unplugs ({ gone }) until a WAIT reports them
     this.waiting = null; // the WAIT in progress: { out, timer }
     this.levels = null;
+    this.trace = null; // the last plug-in's recording (0.7: TRACE)
   }
 
   get knowsSocket() {
@@ -235,8 +255,10 @@ export class SimStation {
   // Someone pushes a drive into the socket (or pulls it out).
   plugIn(drive) {
     this.drive = drive;
-    this.events.push({ heard: drive.powerUp ? drive.powerUp() : new Uint8Array(0) });
+    const heard = drive.powerUp ? drive.powerUp() : new Uint8Array(0);
+    this.events.push({ heard });
     this.levels = SIM_LEVELS;
+    this.trace = simTrace(heard);
     if (this.waiting) this.report();
   }
 
@@ -300,6 +322,12 @@ export class SimStation {
     if (name === 'SOCKET' && this.knowsSocket) return out(this.drive ? 'SOCKET IN' : 'SOCKET EMPTY');
     if (name === 'LEVELS' && this.knowsSocket) return out(this.levels || 'LEVELS NONE');
     if (name === 'PROBE' && Number(this.version.split('.')[1]) >= 6) return out(this.drive ? 'PROBE 61 120 760 1030 1030' : 'PROBE 61 4 6 9 6');
+    if (name === 'TRACE' && Number(this.version.split('.')[1]) >= 7) {
+      if (!this.trace) return out('TRACE NONE');
+      const { signalAt, listenAt, readings } = this.trace, from = Number(baud || 0);
+      const hex = readings.slice(from, from + 1000).map((v) => v.toString(16).toUpperCase().padStart(3, '0')).join('');
+      return out(`TRACE ${readings.length} ${signalAt} ${listenAt} ${from}${hex ? ` ${hex}` : ''}`);
+    }
     if (name === 'WAIT' && this.version !== '0.1') {
       const ms = Number(baud);
       if (!(ms >= 1 && ms <= 60000)) return out('ERR wait must be 1 to 60000 ms');
