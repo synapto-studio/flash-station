@@ -10,7 +10,7 @@ import { PulseImage } from './engines.js';
 import {
   Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
   coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen, canProbe,
-  canTellSocket, afterSend, GONE,
+  canTellSocket, canTrace, afterSend, GONE,
 } from './station.js';
 import { encodeCard } from './idcard.js';
 import { DriveArt } from './drive-art.js';
@@ -24,7 +24,8 @@ const recall = () => { try { return localStorage.getItem(LAST_KEY); } catch { re
 
 export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) {
   // socket: 'in', 'empty' or null (not known: station 0.1/0.2, or not connected).
-  const fs = { station: null, busy: false, stop: false, seen: null, socket: null };
+  // recordings: what a 0.7 box recorded at each plug-in this session (Save plug-in recordings).
+  const fs = { station: null, busy: false, stop: false, seen: null, socket: null, recordings: [] };
   const tellsSocket = () => !!fs.station && canTellSocket(fs.station.version);
   const emptyNote = (drive) => `The socket is empty. Plug ${drive ? drive.drive : 'the drive'} in, wait for its card, then send.`;
   const cardArt = new DriveArt($('fsCardArt'));
@@ -47,6 +48,12 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   };
   const selectedEngine = () => engines()[Number($('fsEngine').value)] || null;
   const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, '0');
+  // What the box heard when it wasn't a good ID, for the Log: what happened, not a guess.
+  const heardText = (bytes) => {
+    if (!bytes || !bytes.length) return 'the box heard nothing';
+    const shown = Array.from(bytes.subarray(0, 24), (x) => x.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    return `the box heard ${bytes.length} byte${bytes.length === 1 ? '' : 's'} but no good ID: ${shown}${bytes.length > 24 ? ' …' : ''}`;
+  };
 
   function setProgress(text, fraction = null) {
     $('fsProgress').textContent = text;
@@ -103,9 +110,11 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
     $('fsSettings').textContent = unplugged ? 'Plug the drive in' : `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
-    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect', 'fsProbe']) $(id).disabled = fs.busy;
+    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect', 'fsProbe', 'fsSaveRec']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
     $('fsProbe').hidden = !fs.station || !canProbe(fs.station.version);
+    $('fsSaveRec').hidden = !fs.recordings.length;
+    $('fsSaveRec').textContent = `Save plug-in recordings (${fs.recordings.length})`;
     $('fsSimSocket').hidden = !(fs.station && fs.station.transport.simulated && listens);
     $('fsPlug').disabled = fs.busy;
     $('fsUnplug').disabled = fs.busy || !(fs.station && fs.station.transport.drive);
@@ -289,20 +298,23 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         fs.seen = null; // whatever the card said was plugged in before has gone
         refresh();
       }
+      let said;
       if (!heard) {
-        log('A drive was plugged in but didn\'t say who it is');
-        $('fsFindNote').textContent = "A drive was plugged in but didn't say who it is. Only coretest 1.4 and pulsetest 1.4 or later introduce themselves: use Find, or pick it in the list.";
+        said = `A drive was plugged in but didn't say who it is (${heardText(bytes)})`;
+        $('fsFindNote').textContent = "A drive was plugged in but didn't say who it is. Use Find, or pick it in the list. A Pulse on pulsetest 1.5, 1.6 or 1.7 can't be read: send it pulsetest 1.8.";
       } else if (heard.blank) {
-        log('A drive with no ID card was plugged in');
+        said = 'A drive with no ID card was plugged in';
         $('fsFindNote').textContent = 'A drive was plugged in, but it has no ID card. Give it one at the Initialisation Station.';
       } else {
         // 1.5 drives also say what lighting they have (checking it against the register: roadmap task 7)
         const fp = heard.fingerprint == null ? '' : `, lighting fingerprint ${heard.fingerprint.toString(16).toUpperCase().padStart(4, '0')}`;
-        log(`Plugged in: ${heard.label} (${heard.board})${fp}`);
+        said = `Plugged in: ${heard.label} (${heard.board})${fp}`;
         $('fsFindNote').textContent = '';
         identified(heard, 'plug');
       }
-      if (tellsSocket()) await logLevels(st);
+      log(said);
+      const lv = tellsSocket() ? await logLevels(st) : null;
+      if (canTrace(st.version)) await keepRecording(st, { said, heard: bytes, levels: lv });
     }
   }
 
@@ -311,8 +323,29 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     try {
       const lv = await st.levels();
       if (lv) log(`Socket levels: empty ${lv.empty}, drive in ${lv.in}, in a dip ${lv.dip}, while it answered ${lv.low}–${lv.high}`);
+      return lv;
     } catch (e) {
       log(`Socket levels: ${e.message}`);
+      return null;
+    }
+  }
+
+  // Station 0.7 records the sense wire at each plug-in, reading by reading: kept for "Save plug-in
+  // recordings", so a plug-in that went wrong can be looked at instead of guessed at.
+  async function keepRecording(st, { said, heard, levels }) {
+    try {
+      const tr = await st.trace();
+      if (!tr) return;
+      fs.recordings.push({
+        at: new Date().toISOString(), log: said, levels,
+        heard: Array.from(heard || [], (x) => x.toString(16).toUpperCase().padStart(2, '0')).join(''),
+        signalAt: tr.signalAt, listenAt: tr.listenAt, sampleUs: tr.sampleUs, readings: tr.readings,
+      });
+      if (fs.recordings.length > 40) fs.recordings.shift();
+      log(`Socket recording kept (${(tr.readings.length * tr.sampleUs / 1e6).toFixed(2)} s): Save plug-in recordings to send it`);
+      refresh();
+    } catch (e) {
+      log(`Socket recording: ${e.message}`);
     }
   }
 
@@ -347,7 +380,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (!state.library) await setLibrary(new Library(new MemoryStore('Demo library (not saved)')));
       if (!sendable().some((d) => d.family === 'pulse')) await demoDrive('pulse');
       if (!sendable().some((d) => d.family === 'core')) await demoDrive('core');
-      await useStation(new SimStation(null, { version: '0.6' }), 'Simulated station');
+      await useStation(new SimStation(null, { version: '0.7' }), 'Simulated station');
     } catch (e) {
       $('fsStatus').textContent = e.message;
     }
@@ -364,6 +397,25 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     } catch (e) {
       log(`Socket measured: ${e.message}`);
     }
+  });
+
+  // Every plug-in recording this session, with the Log, as one file to send to Claude.
+  $('fsSaveRec').addEventListener('click', () => {
+    const file = {
+      what: 'Flash Station plug-in recordings: A0 (the sense wire) from when the box noticed each drive until it stopped listening for its ID',
+      units: 'raw ADC counts, 0.8 mV each; one reading every sampleUs microseconds (about); the box sends its signal from readings[signalAt] and listens from readings[listenAt]',
+      station: fs.station ? fs.station.version : null,
+      saved: new Date().toISOString(),
+      recordings: fs.recordings,
+      log: $('log').textContent,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
+    const a = el('a', { href: url, download: `plug-in-recordings-${file.saved.slice(0, 16).replace(/[T:]/g, '-')}.json` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    log(`Saved ${fs.recordings.length} plug-in recording${fs.recordings.length === 1 ? '' : 's'} to ${a.download}`);
   });
 
   $('fsDisconnect').addEventListener('click', async () => {
@@ -543,7 +595,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         result = 'The socket is empty';
         note('The drive was unplugged. Plug it back in, then try again.');
       } else if (!heard) {
-        result = 'No answer';
+        result = `No answer (${heardText(answer)})`;
         note('No answer. Push the drive all the way into the socket and try again. Only Core drives on coretest 1.3 or later answer so far; for a Pulse, pick it in the list.');
       } else if (heard.blank) {
         result = 'A drive with no ID card';

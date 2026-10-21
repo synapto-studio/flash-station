@@ -12,10 +12,10 @@ import { demoEngines, PULSE_DEFAULTS, CORE_DEFAULTS } from '../js/demo.js';
 import {
   testPlan, patchPlan, fullPlan, planMs, Station, wake,
   crc8, coreMessage, coreSettingsPayload, coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan,
-  parseHello, helloAnswer, canListen, canProbe, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
+  parseHello, helloAnswer, canListen, canProbe, canTrace, PLUG_COPIES, canTellSocket, GONE, afterSend, unpluggedResult,
 } from '../js/station.js';
 import { encodeCard } from '../js/idcard.js';
-import { SimStation, SimDrive, SimCoreDrive, SIM_LEVELS } from '../js/sim-station.js';
+import { SimStation, SimDrive, SimCoreDrive, SIM_LEVELS, simTrace } from '../js/sim-station.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TMP = mkdtempSync(join(tmpdir(), 'fs-station-'));
@@ -488,4 +488,39 @@ test('station 0.6: PROBE measures the socket (empty vs a drive in)', async () =>
   await st.connect();
   assert.equal((await st.probe()).end, 1030);
   assert.ok(canProbe('0.6') && !canProbe('0.5'));
+});
+
+test('station 0.7: TRACE gives the last plug-in\'s recording in pieces, and it holds the ID the drive flickered', async () => {
+  const sim = new SimStation(null, { version: '0.7' });
+  const st = new Station(sim);
+  await st.connect();
+  assert.equal(await st.trace(), null, 'TRACE NONE before the first plug-in');
+  const pulse = new SimDrive(oldImage(), card(4, 'Pulse A2', 'P'));
+  pulse.announces = true;
+  sim.plugIn(pulse);
+  const heard = await st.wait(30);
+  assert.equal(parseHello(heard).label, 'P-0004');
+  let asked = 0;
+  const command = st.command.bind(st);
+  st.command = (line, ms) => { if (line.startsWith('TRACE')) asked++; return command(line, ms); };
+  const tr = await st.trace();
+  const want = simTrace(heard);
+  assert.deepEqual(tr.readings, want.readings, 'every reading, in order');
+  assert.equal(asked, Math.ceil(want.readings.length / 1000), 'pieces of 1000, no extra round trip');
+  assert.deepEqual([tr.total, tr.signalAt, tr.listenAt, tr.sampleUs], [want.readings.length, 200, 1700, 100]);
+  // Read back from the recording alone: 10 readings a bit, lit = 1, after the 0.01 s lit lead-in.
+  const bits = tr.readings.slice(tr.listenAt + 100).filter((_, i) => i % 10 === 5).map((v) => (v > 50 ? 1 : 0));
+  const bytes = [];
+  for (let i = 0; i + 10 <= bits.length; i += 10) bytes.push(bits.slice(i + 1, i + 9).reduce((b, x, k) => b | (x << k), 0));
+  assert.deepEqual(Uint8Array.from(bytes), heard);
+  sim.plugIn(new SimCoreDrive(CORE_DEFAULTS, card(1)));      // says nothing: 0.4 s of a dark drive
+  assert.equal((await st.wait(30)).length, 0);
+  assert.equal((await st.trace()).readings.length, 200 + 1500 + 4000);
+  assert.ok(canTrace('0.7') && !canTrace('0.6'));
+});
+
+test('station 0.6 has no TRACE: the box refuses it', async () => {
+  const st = new Station(new SimStation(null, { version: '0.6' }));
+  await st.connect();
+  await assert.rejects(st.trace(), /refused/);
 });
