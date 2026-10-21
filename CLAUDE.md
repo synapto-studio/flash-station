@@ -16,6 +16,10 @@ Jonny wants regular reminders on using Claude efficiently. When a session gets l
 - `python3 test/pymcuprog_bytes.py` – browser flasher must send byte-for-byte what pymcuprog sends (needs `pip install pymcuprog`). Run after touching `js/updi.js` or `js/sim.js`.
 - `python3 test/pymcuprog_vs_sim.py` – real pymcuprog against the simulated chip.
 - Local preview: `python3 -m http.server 8765` then open http://localhost:8765 (Web Serial works on localhost).
+- `node tools/animation-clip.mjs recipe.json --out clip.mp4 [--music demo --start 8] [--colours "red=r,g,b orange=… white=…"]` – preview clip of an animation recipe (headless Chromium + ffmpeg).
+
+## Animations
+When Jonny describes an animation, follow "Making an animation in a session" in `docs/ANIMATION-FORMAT.md`: write the recipe, make a clip with `tools/animation-clip.mjs`, send him the `.mp4` and the recipe in a ```json block to paste into Routines → Animation lab.
 
 ## Rules
 - IMPORTANT: this repo is public. Never commit firmware (.hex, .ino, .c), routines, the drive register or anything from the library folder. Those live in Jonny's library folder or the private firmware repo.
@@ -31,6 +35,8 @@ Jonny wants regular reminders on using Claude efficiently. When a session gets l
 - `js/engines.js` engine detection, settings layouts, pulsetest image (matches `test/ref_pulse_station.py`)
 - `js/idcard.js` 32-byte ID card in the user row · `js/library.js` library folder + drive register · `js/profiles.js` drive profiles (LED count, groups, positions) · `js/routines.js`, `js/phases.js`, `js/palettes.js` routines, phase files, colour sets · `js/initialise.js` IS flow
 - `js/songs.js` song moments (R1): frame answers, prints, training, the drive's matcher (C twin in firmware `pulsetest/songmatch/`) · `test/song_experiment.mjs` R1 on real clips (needs ffmpeg; clips never committed)
+- `js/player.js` animation player and recipe bytes (R2; spec `docs/ANIMATION-FORMAT.md`) · `js/animations.js` today's looks as recipes
+- `js/lab.js` Animation lab (R3): reads pasted recipes with plain errors, `animations/` files · `js/lab-tab.js` the lab in the Routines tab · `tools/animation-clip.mjs` preview clips
 - `js/main.js` UI · `js/drive-art.js` the drive drawing
 - `docs/ROADMAP.md` what to build next, in order, with how to check each part
 - `docs/STATION-PROTOCOL.md` the power-line protocol and the XIAO wiring

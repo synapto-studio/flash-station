@@ -233,6 +233,7 @@ const PulseEngine = (function () {
     var n = st.n, leds = new Uint8Array(n * 24);
     var kOn = new Uint8Array(n), sOn = new Uint8Array(n), loud = new Int16Array(n), gains = new Uint8Array(n * 3);
     var phase = new Uint16Array(n), bpm = new Float32Array(n), conf = new Uint8Array(n);
+    var barLead = new Uint16Array(n), kickOut = new Uint8Array(n), period = new Uint32Array(n); // for the player (js/player.js)
     var kd = newDet(), sd = newDet(), sinceKick2 = 60000;
     var kGap = fl(S.kickGapMs * 100 / BLOCK_MS_X100), sGap = kGap, beatBlocks = fl(2500 * 100 / BLOCK_MS_X100);
     // pulseInit(160): the routine starts its look 160 ms after power-up
@@ -395,6 +396,7 @@ const PulseEngine = (function () {
       var ph = gridPhase(now + S.leadMs), env;
       if (ph < 4096) env = fl(ph * 255 / 4096);
       else { var x = fl((ph - 4096) * 255 / 61440); env = fl((255 - x) * (255 - x) / 255); }
+      barLead[bi] = ph; kickOut[bi] = kickLevel >> 8; period[bi] = G.period16;
       sc[TOP] = S.red; sl[TOP] = (S.topLow + tr((S.topHigh - S.topLow) * env / 255)) & 255;
       if (isSteady) {
         var kk = kickLevel >> 8;
@@ -411,7 +413,8 @@ const PulseEngine = (function () {
       loud[bi] = loudX16; gains[bi * 3] = gainOf[0]; gains[bi * 3 + 1] = gainOf[1]; gains[bi * 3 + 2] = gainOf[2];
       phase[bi] = gridPhase(now); bpm[bi] = 38400000 / G.period16 / 10; conf[bi] = G.conf;
     }
-    return { leds: leds, kOn: kOn, sOn: sOn, loud: loud, gains: gains, phase: phase, bpm: bpm, conf: conf, phaseEnds: pe, startMs: startMs };
+    return { leds: leds, kOn: kOn, sOn: sOn, loud: loud, gains: gains, phase: phase, bpm: bpm, conf: conf, phaseEnds: pe, startMs: startMs,
+             barLead: barLead, kick: kickOut, period: period };
   }
 
   /* ---------- a drum & bass demo: 174 BPM, kicks on 1 and the "and" of 3, snares on 2 and 4 ---------- */

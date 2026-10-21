@@ -8,6 +8,7 @@
 //   palettes/   saved colour sets (.json)
 //   drives/     the drive register, one .json per drive (P-0007.json)
 //   casings/    drive profiles (.json: LED count, groups, LED positions); CAD models later
+//   animations/ animation recipes from the Animation lab (.json, docs/ANIMATION-FORMAT.md)
 
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
@@ -15,8 +16,9 @@ import { isPalette, paletteFileName } from './palettes.js';
 import { isPhaseFile, phaseFileName } from './phases.js';
 import { isRoutine, routineFileName } from './routines.js';
 import { isProfile, profileFileName, defaultProfile } from './profiles.js';
+import { isAnimation, animationFileName, makeAnimation, recipeText } from './lab.js';
 
-export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings'];
+export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings', 'animations'];
 
 // ---------------------------------------------------------------- storage backends
 class FolderStore {
@@ -232,6 +234,21 @@ export class Library {
     if (!isProfile(profile)) throw new Error('That drive profile is not complete.');
     const { estimate, ...clean } = profile; // the estimate flag belongs to the built-in default only
     await this.writeJson('casings', profileFileName(clean), clean);
+  }
+
+  // Animations (animations/ folder): recipes from the Animation lab. An "any" animation is listed
+  // for both boards. Saving the same name for the same board replaces it.
+  async animations(family) {
+    return (await this.jsonFiles('animations')).map((f) => f.data).filter((a) => isAnimation(a) && (!family || a.board === family || a.board === 'any'));
+  }
+
+  // Returns { animation (as saved), file, replaced }. Throws a plain error for a recipe that doesn't work.
+  async saveAnimation(recipe, name) {
+    const animation = makeAnimation(recipe, name);
+    const file = animationFileName(animation);
+    const replaced = (await this.store.list('animations')).includes(file);
+    await this.store.write('animations', file, recipeText(animation));
+    return { animation, file, replaced };
   }
 
   // The profile for a casing code (like "SOTA", any capitals) and board, or the built-in estimate.

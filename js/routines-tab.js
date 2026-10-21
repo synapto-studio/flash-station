@@ -1,6 +1,8 @@
 // The Routines tab: live previews of what a Core or a Pulse drive's lights will do, using the
 // same maths as the firmware (js/preview-core.js, js/preview-pulse.js). No audio, no hardware.
-// Pulse plays a built-in drum and bass demo through the simulated mic.
+// Pulse plays a built-in drum and bass demo through the simulated mic. Next to today's engine,
+// the new player (js/player.js) plays the same look rebuilt as recipes (js/animations.js). The
+// Animation lab (js/lab-tab.js) plays recipes pasted from a Claude session.
 
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
@@ -9,6 +11,9 @@ import { PHASES, makePhaseFile, applyPhaseFile, toEngineNames } from './phases.j
 import { ROUTINE_PHASES, makeRoutine, engineToPreview } from './routines.js';
 import { defaultProfile, makeProfile, drawnLeds, groupOf } from './profiles.js';
 import { resolveRoutine } from './library.js';
+import { Show, makeDrive, pack } from './player.js';
+import { coreEngine, coreDrift, pulseStartup, pulseAmbient, heartbeat, heartbeatToday, pulseMusic } from './animations.js';
+import { initAnimationLab } from './lab-tab.js';
 
 const CORE_FIELDS = [
   ['BRIGHTNESS', 'Overall brightness (0–255)', 1, 255],
@@ -48,7 +53,8 @@ export function initRoutinesTab({ $, el, state }) {
   const S = { core: structuredClone(core.DEFAULTS), pulse: { ...pulse.DEFAULTS } };
   let t = 0, playing = true, speed = 1, last = null, pulseRun = null, pulseDirty = true, pulseStage1 = null;
 
-  const lensEls = [];
+  const lensEls = [], lensEls2 = [];
+  let playerShow = null, lab = null;
 
   // One side of the drive, front view, drawn from the drive profile (js/profiles.js): y is mm above
   // the top of the USB A connector, x is mm from the centre line. The profile lists only LEDs whose
@@ -57,9 +63,14 @@ export function initRoutinesTab({ $, el, state }) {
   const MM = 4.5, PLUG_H = 14, PLUG_W = 12, BOARD_W = 16, TOP_PAD = 8; // px per mm, mm
 
   function buildBoard() {
+    buildBoardIn($('rtBoard'), lensEls);
+    buildBoardIn($('rtBoard2'), lensEls2);
+    playerShow = null;
+    if (lab) lab.refresh();
+  }
+  function buildBoardIn(board, lensEls) {
     const spots = drawnLeds(profile[family]);
     const topY = Math.max(...spots.map((q) => q.y)) + TOP_PAD;
-    const board = $('rtBoard');
     board.replaceChildren();
     board.style.height = `${(topY + PLUG_H) * MM}px`;
     lensEls.length = 0;
@@ -116,6 +127,39 @@ export function initRoutinesTab({ $, el, state }) {
     for (let k = 0; k < 8; k++) out.push([...pulseRun.leds.subarray(i * 24 + k * 3, i * 24 + k * 3 + 3)]);
     return out;
   }
+  // ---- the same look from the new player: Engine + Drift (Core), start-up + ambient (Pulse)
+  function player() {
+    if (playerShow) return playerShow;
+    const drive = makeDrive(profile[family]);
+    if (family === 'core') {
+      const C = S.core;
+      playerShow = new Show({ sections: [coreEngine(C), coreDrift(C)], drive, colours: { red: C.RED, orange: C.ORANGE, white: C.WHITE, yellow: C.YELLOW }, brightness: C.BRIGHTNESS });
+    } else {
+      if (pulseDirty) frameAt(0);
+      const P = S.pulse;
+      playerShow = new Show({ sections: [pulseStartup(P), pulseAmbient(P)], drive, colours: { red: P.red, orange: P.orange, white: P.white }, brightness: P.brightness, music: pulseMusic(pulseRun, pulseStage1) });
+    }
+    return playerShow;
+  }
+  function playerFrameAt(ms) {
+    try {
+      if (family === 'core') return player().frame(Math.floor(ms / 10) * 10);
+      const show = player(), n = pulseStage1.n;
+      const i = Math.min(n - 1, Math.max(0, Math.round((ms - pulseRun.startMs) / pulse.BLOCK_MS) - 1));
+      return show.frame(pulseStage1.now[i] - pulseRun.startMs);
+    } catch (e) { return Array.from({ length: family === 'core' ? 6 : 8 }, () => [0, 0, 0]); }
+  }
+  function playerNote() {
+    try {
+      if (family === 'core') {
+        const e = pack(coreEngine(S.core)).length, d = pack(coreDrift(S.core)).length;
+        $('rtPlayerNote').textContent = `New player: Engine (start-up) is ${e} bytes and Drift (ambient) ${d} bytes. With the 4 colours, brightness and layout byte that's ${e + d + 14} of the 98 bytes Core has for settings.`;
+      } else {
+        const a = pack(pulseStartup(S.pulse)).length, b = pack(pulseAmbient(S.pulse)).length;
+        $('rtPlayerNote').textContent = `New player: start-up is ${a} bytes and ambient ${b} bytes. The rainbow on the back LEDs 4 and 6 is a shade off today's (the front, drawn here, matches).`;
+      }
+    } catch (e) { $('rtPlayerNote').textContent = `New player: ${e.message}`; }
+  }
   const length = () => (family === 'core' ? CORE_LEN : Math.min(PULSE_LEN, pulseStage1 ? pulseStage1.t[pulseStage1.n - 1] * 1000 : PULSE_LEN));
   const frameAt = (ms) => (family === 'core' ? core.render(S.core, Math.floor(ms / 10) * 10) : pulseFrame(ms));
 
@@ -128,32 +172,43 @@ export function initRoutinesTab({ $, el, state }) {
     }
   }
 
-  function drawStrip() {
-    const cv = $('rtStrip');
+  function stripOn(cv, len, frameFn, rows) {
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(cv.clientWidth * dpr)), h = Math.max(1, Math.round(cv.clientHeight * dpr));
     cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d');
-    const len = length();
-    const rows = family === 'core' ? [2, 0] : [4, 2, 0]; // top of the drive first
     const rh = h / rows.length;
-    if (family === 'pulse' && pulseDirty) frameAt(0);
     for (let x = 0; x < w; x++) {
-      const px = frameAt(Math.floor((x / w) * len));
+      const px = frameFn(Math.floor((x / w) * len));
       rows.forEach((led, r) => { ctx.fillStyle = css(px[led]); ctx.fillRect(x, r * rh, 1, Math.ceil(rh)); });
     }
+  }
+  function drawStrip() {
+    const len = length();
+    const rows = family === 'core' ? [2, 0] : [4, 2, 0]; // top of the drive first
+    if (family === 'pulse' && pulseDirty) frameAt(0);
+    stripOn($('rtStrip'), len, frameAt, rows);
+    stripOn($('rtStrip2'), len, playerFrameAt, rows);
+    playerNote();
+    // the plug-in heartbeat, one whole loop
+    const drive = makeDrive(profile[family]), hb = new Show({ sections: [heartbeat()], drive });
+    stripOn($('rtHbToday'), 38600, (ms) => heartbeatToday(ms, drive.heights), rows);
+    stripOn($('rtHbPlayer'), 38600, (ms) => hb.frame(ms), rows);
+    $('rtHbNote').textContent = `Heartbeat recipe: ${pack(heartbeat()).length} bytes. The preview's sparkle (±8 levels in the flow) isn't in the recipe.`;
     $('rtRows').textContent = family === 'core' ? 'Timeline rows, top of the drive first: the upper LED, then the lower pair.' : 'Timeline rows, top of the drive first: top, middle, then the bottom pair.';
   }
 
+  // Lights the drawn LEDs: px is each LED's [r, g, b].
+  const light = (els, px) => px.forEach((c, i) => {
+    if (!els[i]) return;
+    els[i].style.background = Math.max(...c) === 0 ? '' : css(c);
+    els[i].style.boxShadow = Math.max(...c) === 0 ? '' : `0 0 ${8 + 18 * Math.max(...c) / 255}px ${css(c)}`;
+  });
   function draw() {
     const len = length();
     if (t > len) t = 0;
-    const px = frameAt(t);
-    px.forEach((c, i) => {
-      if (!lensEls[i]) return;
-      lensEls[i].style.background = Math.max(...c) === 0 ? '' : css(c);
-      lensEls[i].style.boxShadow = Math.max(...c) === 0 ? '' : `0 0 ${8 + 18 * Math.max(...c) / 255}px ${css(c)}`;
-    });
+    light(lensEls, frameAt(t));
+    light(lensEls2, playerFrameAt(t));
     $('rtClock').textContent = `${(t / 1000).toFixed(2)} s`;
     $('rtScrub').value = String(Math.round((t / len) * 1000));
   }
@@ -269,7 +324,7 @@ export function initRoutinesTab({ $, el, state }) {
     buildProfileEditor(); buildBoard(); draw();
   }
 
-  function changed() { pulseDirty = true; note(); drawStrip(); draw(); }
+  function changed() { pulseDirty = true; playerShow = null; note(); drawStrip(); draw(); if (lab) lab.refresh(); }
 
   function setFamily(f) {
     family = f;
@@ -281,6 +336,7 @@ export function initRoutinesTab({ $, el, state }) {
     if (f === 'pulse' && !pulseStage1) frameAt(0);
     note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {});
     loadProfiles().then(useProfile).catch(() => {});
+    if (lab) lab.reload();
   }
 
   function tick(now) {
@@ -314,7 +370,7 @@ export function initRoutinesTab({ $, el, state }) {
       const p = makePalette(family, $('rtPalName').value, S[family]);
       await state.library.savePalette(p);
       $('rtPalName').value = '';
-      await loadPalettes(p.name); await loadRoutines();
+      await loadPalettes(p.name); await loadRoutines(); lab.reload();
       palMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
     } catch (e) { palMsg(e.message); }
   });
@@ -368,8 +424,9 @@ export function initRoutinesTab({ $, el, state }) {
   });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); }); // the strip can't be sized while hidden
-  window.addEventListener('resize', () => { if (!$('p-routines').hidden) drawStrip(); });
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); }); // the strip can't be sized while hidden
+  window.addEventListener('resize', () => { if (!$('p-routines').hidden) { drawStrip(); lab.redrawStrip(); } });
+  lab = initAnimationLab({ $, el, state, tab: { family: () => family, setFamily, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light } });
   setFamily('core');
   requestAnimationFrame(tick);
 }
