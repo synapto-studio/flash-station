@@ -9,6 +9,8 @@
 //   drives/     the drive register, one .json per drive (P-0007.json)
 //   casings/    drive profiles (.json: LED count, groups, LED positions); CAD models later
 //   animations/ animation recipes from the Animation lab (.json, docs/ANIMATION-FORMAT.md)
+//   songs/      song clips for song moments (.mp3, .wav ...): they stay on this computer
+//   moments/    song moments (.json, js/moments.js): what a Pulse listens for and what it plays
 
 import { parseHex } from './intelhex.js';
 import { readEngine } from './engines.js';
@@ -17,8 +19,9 @@ import { isPhaseFile, phaseFileName } from './phases.js';
 import { isRoutine, routineFileName } from './routines.js';
 import { isProfile, profileFileName, defaultProfile } from './profiles.js';
 import { isAnimation, animationFileName, makeAnimation, recipeText } from './lab.js';
+import { isMoment, momentFileName, AUDIO_TYPES } from './moments.js';
 
-export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings', 'animations'];
+export const FOLDERS = ['engines', 'phases', 'routines', 'palettes', 'drives', 'casings', 'animations', 'songs', 'moments'];
 
 // ---------------------------------------------------------------- storage backends
 class FolderStore {
@@ -40,7 +43,11 @@ class FolderStore {
     const f = await (await (await this.dir(dirName)).getFileHandle(name)).getFile();
     return f.text();
   }
-  async write(dirName, name, text) {
+  async readBytes(dirName, name) {
+    const f = await (await (await this.dir(dirName)).getFileHandle(name)).getFile();
+    return f.arrayBuffer();
+  }
+  async write(dirName, name, text) { // text, or bytes
     const fh = await (await this.dir(dirName)).getFileHandle(name, { create: true });
     const w = await fh.createWritable();
     await w.write(text);
@@ -64,6 +71,10 @@ export class MemoryStore {
     const k = `${dirName}/${name}`;
     if (!this.files.has(k)) throw new Error(`${k} not found`);
     return this.files.get(k);
+  }
+  async readBytes(dirName, name) {
+    const b = await this.read(dirName, name);
+    return typeof b === 'string' ? new TextEncoder().encode(b).buffer : b.slice().buffer;
   }
   async write(dirName, name, text) {
     this.files.set(`${dirName}/${name}`, text);
@@ -249,6 +260,34 @@ export class Library {
     const replaced = (await this.store.list('animations')).includes(file);
     await this.store.write('animations', file, recipeText(animation));
     return { animation, file, replaced };
+  }
+
+  // Song clips (songs/ folder), kept as they were added. Returns the file names.
+  async songs() {
+    return (await this.store.list('songs')).filter((n) => AUDIO_TYPES.test(n));
+  }
+
+  // bytes: an ArrayBuffer or Uint8Array of the clip as it came
+  async addSong(name, bytes) {
+    if (!AUDIO_TYPES.test(name)) throw new Error(`${name} isn't a sound file the app knows. Use an .mp3, .wav, .m4a, .aiff, .flac or .ogg file.`);
+    await this.store.write('songs', name, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+  }
+
+  async readSong(name) {
+    return this.store.readBytes('songs', name);
+  }
+
+  // Song moments (moments/ folder), Pulse only. Saving the same name replaces it.
+  async moments(song) {
+    return (await this.jsonFiles('moments')).map((f) => f.data).filter((m) => isMoment(m) && (!song || m.song === song));
+  }
+
+  async saveMoment(moment) {
+    if (!isMoment(moment)) throw new Error('That song moment is not complete.');
+    const file = momentFileName(moment);
+    const replaced = (await this.store.list('moments')).includes(file);
+    await this.writeJson('moments', file, moment);
+    return { moment, file, replaced };
   }
 
   // The profile for a casing code (like "SOTA", any capitals) and board, or the built-in estimate.

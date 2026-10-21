@@ -280,4 +280,18 @@ details.small > *:not(summary) { margin-top: 10px; }
 .lab-info { margin-top: 8px; }
 .lab-check { display: inline-flex; gap: 8px; align-items: center; }
 .lab-check input { width: auto; }
+.sm-file { position: relative; overflow: hidden; cursor: pointer; }
+.sm-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.sm-overview { width: 100%; height: 44px; display: block; border-radius: 6px 6px 0 0; border: 1px solid var(--edge); border-bottom: 0; background: #121010; cursor: pointer; touch-action: none; }
+.sm-detail { width: 100%; height: 190px; display: block; border-radius: 0 0 6px 6px; border: 1px solid var(--edge); background: #121010; margin-bottom: 10px; touch-action: none; }
+.sm-val { color: var(--paper); }
+.sm-marks .rt-controls { margin-bottom: 4px; }
+.sm-marks { margin-bottom: 8px; }
+.sm-preview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 0 24px; align-items: start; }
+.sm-stage { margin-top: 0; }
+.sm-stage .rt-clock { font-size: 15px; min-height: 2.6em; }
+.sm-repeat { border: 1px solid var(--edge); border-radius: 8px; padding: 6px 12px 10px; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.sm-repeat legend { color: var(--muted); padding: 0 4px; }
+.sm-repeat .note { flex-basis: 100%; margin: 0; }
+@media (max-width: 860px) { .sm-preview { grid-template-columns: 1fr; } }
 @media (max-width: 860px) { .lab { grid-template-columns: 1fr; grid-template-rows: none; grid-template-areas: 'edit' 'view' 'settings'; } .lab-text { min-height: 220px; } }
