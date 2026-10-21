@@ -351,6 +351,7 @@ export function initAnimationLab({ $, el, state, tab }) {
       lastName = animation.name;
       readNow();
       await reload();
+      if (tab.saved) tab.saved(); // so Song moments lists it without leaving the tab
       saveMsg(`Saved "${animation.name}" as animations/${file}${replaced ? ', replacing the one saved before' : ''}${state.library.saved ? '' : ' (demo library: lost when you close the page)'}.`);
     } catch (e) { saveMsg(e.message); }
   });

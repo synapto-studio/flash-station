@@ -428,7 +428,7 @@ export function initRoutinesTab({ $, el, state }) {
 
   $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); moments.reload(); }); // the strip can't be sized while hidden
   window.addEventListener('resize', () => { if (!$('p-routines').hidden) { drawStrip(); lab.redrawStrip(); moments.redraw(); } });
-  lab = initAnimationLab({ $, el, state, tab: { family: () => family, setFamily, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light } });
+  lab = initAnimationLab({ $, el, state, tab: { family: () => family, setFamily, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light, saved: () => { if (moments) moments.reload(); } } });
   moments = initSongMoments({ $, el, state, tab: { family: () => family, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, light } });
   setFamily('core');
   requestAnimationFrame(tick);
