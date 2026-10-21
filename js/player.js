@@ -10,7 +10,8 @@
 // 'beats'); later layers are drawn over earlier ones. One-shot animations (once: true, like a
 // start-up) can be written as a step list: steps: [{ for: 1200, layers: [...] }, ...].
 // Colours are slots in the colour set, never "red": 1 red, 2 orange, 3 white, 4 yellow (Core's
-// fourth colour; Pulse uses its orange), 5 the station's warm white, 0 off.
+// fourth colour; Pulse uses its orange), 5 the station's warm white, 0 off. A recipe can also
+// carry up to 10 fixed colours of its own, custom: [[r, g, b], ...], which are slots 6 to 15.
 
 const fl = Math.floor;
 
@@ -18,14 +19,15 @@ const fl = Math.floor;
 export const CURVES = ['linear', 'ease', 'in', 'out', 'exp'];
 export const BLENDS = ['over', 'mask', 'tint', 'lift'];
 export const SIDES = ['above', 'below'];
-export const COLOUR_SLOTS = 6;
+export const COLOUR_SLOTS = 6; // from the colour set (0-5); the recipe's own colours follow
+export const MAX_CUSTOM = 10;   // slots 6-15: a colour is 4 bits in fade's and drift's bytes
 export const STATION_WHITE = [255, 247, 234]; // the box's LED line white (l, l - l/32, l - l/12)
 
 // Each move: its number in the bytes, its settings in byte order [name, type, default], and
 // for some a style byte [name, bits, values (an enum) or null (yes/no)].
-// Types: colour (0-5), colour2 (from, to), colours (2-4 slots), level (0-255), levels (from, to),
-// time (ms or beats), lag (signed time, plug to logo), pos (% of the drive, even, -256..254),
-// pct (% of the drive, 1-255), hits (on ms, off ms, peak), u8.
+// Types: colour (0-5, or 6-15 from the recipe's custom), colour2 (from, to), colours (2-4 slots),
+// level (0-255), levels (from, to), time (ms or beats), lag (signed time, plug to logo), pos (% of
+// the drive, even, -256..254), pct (% of the drive, 1-255), hits (on ms, off ms, peak), u8.
 export const MOVES = {
   glow:    { id: 0, params: [['colour', 'colour', 1], ['level', 'level', 255]] },
   fade:    { id: 1, needsFor: true, params: [['colour', 'colour2', [1, 1]], ['level', 'levels', [0, 255]]],
@@ -81,9 +83,9 @@ function apart(a, b) { // how many letters to change, add or remove to turn a in
   }
   return row[b.length];
 }
-function didYouMean(word, options) {
+function didYouMean(word, options, likely = LIKELY) {
   const w = String(word).toLowerCase();
-  let best = options.includes(LIKELY[w]) ? LIKELY[w] : null;
+  let best = options.includes(likely[w]) ? likely[w] : null;
   if (!best) {
     const near = options.map((o) => [o, apart(w, o.toLowerCase())]).sort((x, y) => x[1] - y[1])[0];
     if (near && near[1] <= (w.length <= 4 ? 1 : 2)) best = near[0];
@@ -91,14 +93,29 @@ function didYouMean(word, options) {
   return best ? ` (did you mean "${best}"?)` : '';
 }
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'notes', 'layers', 'steps'];
+export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'custom', 'notes', 'layers', 'steps'];
+const RECIPE_LIKELY = { colours: 'custom', colors: 'custom', customcolours: 'custom', customcolors: 'custom', palette: 'custom', rgb: 'custom' };
+
+// The recipe's own colours: a list of up to 10 [r, g, b], the first is colour 6.
+function normCustom(v) {
+  if (v === undefined) return [];
+  const eg = 'like "custom": [[159, 255, 82]] (the first is colour 6, the next 7, and so on)';
+  if (!Array.isArray(v)) fail('Recipe', `"custom" is a list of the recipe's own colours in square brackets, ${eg}.`);
+  if (v.length > MAX_CUSTOM) fail('Recipe', `"custom" has ${v.length} colours; the most is ${MAX_CUSTOM} (colours 6 to 15).`);
+  return v.map((c, k) => {
+    if (!Array.isArray(c) || c.length !== 3 || !c.every((x) => Number.isInteger(x) && x >= 0 && x <= 255)) {
+      fail('Recipe', `custom colour ${k + 1} (colour ${COLOUR_SLOTS + k}) must be [red, green, blue], each a whole number from 0 to 255, like [159, 255, 82] (got ${JSON.stringify(c)}).`);
+    }
+    return [...c];
+  });
+}
 
 // The canonical recipe: steps flattened into layers with absolute `at`, every setting filled
 // in and rounded to what the bytes hold. pack() and unpack() agree on this form exactly.
 export function normalise(recipe) {
   if (!isObj(recipe)) throw new RecipeError('A recipe is an object like { "type": "animation", "layers": [...] }.');
   if (recipe.type !== undefined && recipe.type !== 'animation') fail('Recipe', `"type" must be "animation" (got ${JSON.stringify(recipe.type)}).`);
-  for (const k of Object.keys(recipe)) if (!RECIPE_KEYS.includes(k)) fail('Recipe', `"${k}" isn't part of a recipe${didYouMean(k, RECIPE_KEYS)}. A recipe has ${RECIPE_KEYS.join(', ')}.`);
+  for (const k of Object.keys(recipe)) if (!RECIPE_KEYS.includes(k)) fail('Recipe', `"${k}" isn't part of a recipe${didYouMean(k, RECIPE_KEYS, { ...LIKELY, ...RECIPE_LIKELY })}. A recipe has ${RECIPE_KEYS.join(', ')}.`);
   if (recipe.name !== undefined && typeof recipe.name !== 'string') fail('Recipe', '"name" must be text in quotes, like "Drop".');
   const board = recipe.board || 'any';
   if (!['core', 'pulse', 'any'].includes(board)) fail('Recipe', `board must be "core", "pulse" or "any" (got "${board}").`);
@@ -106,6 +123,7 @@ export function normalise(recipe) {
   if (!STEP[timing]) fail('Recipe', `timing must be "ms" or "beats" (got "${timing}").`);
   if (recipe.once !== undefined && typeof recipe.once !== 'boolean') fail('Recipe', '"once" must be true or false.');
   const once = !!recipe.once;
+  const custom = normCustom(recipe.custom);
   const list = (v, where, what) => {
     if (v === undefined) return [];
     if (!Array.isArray(v)) fail(where, `"${what}" must be a list in square brackets: [ ... ].`);
@@ -136,6 +154,7 @@ export function normalise(recipe) {
   if (!flat.length) fail('Recipe', 'it has no layers. Add "layers": [ ... ] (or "steps" for a one-shot).');
   if (flat.length > MAX_LAYERS) fail('Recipe', `it has ${flat.length} layers; the most is ${MAX_LAYERS}.`);
   const out = { type: 'animation', name: String(recipe.name || 'Untitled'), board, timing, once, layers: [] };
+  if (custom.length) out.custom = custom;
   const step = STEP[timing], unit = (q) => +(q * step).toFixed(4);
   let prev = null;
   flat.forEach((l, i) => {
@@ -160,7 +179,7 @@ export function normalise(recipe) {
     } else if (m.needsFor) fail(where, `"${l.move}" needs a length ("for").`);
     c.at = at;
     if (len !== null) c.for = len;
-    for (const [name, type, def] of m.params) c[name] = normParam(l[name] === undefined ? def : l[name], type, name, where, timing);
+    for (const [name, type, def] of m.params) c[name] = normParam(l[name] === undefined ? def : l[name], type, name, where, timing, custom.length);
     for (const [name, , values, def] of m.style || []) {
       const v = l[name] === undefined ? def : l[name];
       if (values ? !values.includes(v) : typeof v !== 'boolean') fail(where, values ? `"${name}" must be one of ${values.join(', ')} (got ${JSON.stringify(v)}).` : `"${name}" must be true or false.`);
@@ -185,18 +204,28 @@ function normLeds(leds, board, where) {
   return [...new Set(leds)].sort((a, b) => a - b);
 }
 
-function normParam(v, type, name, where, timing) {
+function normParam(v, type, name, where, timing, customs = 0) {
   const int = (x, lo, hi) => {
     if (!Number.isInteger(x) || x < lo || x > hi) fail(where, `"${name}" must be a whole number from ${lo} to ${hi} (got ${JSON.stringify(x)}).`);
     return x;
   };
+  // 0-5 from the colour set, 6-15 the recipe's own (only as many as its "custom" list has)
+  const slot = (x, lo) => {
+    int(x, lo, COLOUR_SLOTS + MAX_CUSTOM - 1);
+    if (x >= COLOUR_SLOTS + customs) {
+      fail(where, customs
+        ? `colour ${x} isn't one of this recipe's own colours: its "custom" list has ${customs} (colour${customs === 1 ? ' 6' : `s 6 to ${COLOUR_SLOTS + customs - 1}`}). Add more to "custom", or use one of those.`
+        : `colour ${x} is one of the recipe's own colours (6 to 15), but the recipe has none. Add "custom": [[r, g, b]] to the recipe: the first is colour 6.`);
+    }
+    return x;
+  };
   const step = STEP[timing];
   switch (type) {
-    case 'colour': return int(v, 0, COLOUR_SLOTS - 1);
-    case 'colour2': { const a = Array.isArray(v) ? v : [v, v]; if (a.length !== 2) fail(where, `"${name}" is a colour or [from, to].`); return a.map((x) => int(x, 0, COLOUR_SLOTS - 1)); }
+    case 'colour': return slot(v, 0);
+    case 'colour2': { const a = Array.isArray(v) ? v : [v, v]; if (a.length !== 2) fail(where, `"${name}" is a colour or [from, to].`); return a.map((x) => slot(x, 0)); }
     case 'colours': {
       if (!Array.isArray(v) || v.length < 2 || v.length > 4) fail(where, `"${name}" must list 2 to 4 colours, like [1, 2].`);
-      return v.map((x) => int(x, 1, COLOUR_SLOTS - 1));
+      return v.map((x) => slot(x, 1));
     }
     case 'level': case 'u8': return int(v, 0, 255);
     case 'levels': { const a = Array.isArray(v) ? v : [v, v]; if (a.length !== 2) fail(where, `"${name}" is a level or [from, to].`); return a.map((x) => int(x, 0, 255)); }
@@ -254,8 +283,9 @@ export function length(anim) {
 }
 
 // ---------------------------------------------------------------- bytes
-// Animation: 1 header byte (bits 0-3 layer count, bit 4 timing in beats, bit 5 one-shot), then
-// each layer: 1 byte (bits 0-3 move, bits 4-5 start: 0 at the start, 1 when the layer before
+// Animation: 1 header byte (bits 0-3 layer count, bit 4 timing in beats, bit 5 one-shot, bit 6
+// it has colours of its own), then if bit 6 a count byte (1-10) and 3 bytes (r, g, b) for each
+// of them (colours 6, 7, ...), then each layer: 1 byte (bits 0-3 move, bits 4-5 start: 0 at the start, 1 when the layer before
 // ends, 2 with the layer before, 3 at its own time; bit 6 has a length; bit 7 same LEDs as the
 // layer before), the LED byte (bit 0 = LED 1) unless bit 7, its start time if 3, its length if
 // bit 6, then the move's settings in the order of MOVES. A time is 1 byte (0xxxxxxx, 0-127
@@ -267,7 +297,8 @@ const unmask = (m) => [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => m & (1 << (n - 1)))
 
 export function pack(recipe) {
   const a = normalise(recipe), step = STEP[a.timing], hs = HIT_STEP[a.timing];
-  const out = [a.layers.length | (a.timing === 'beats' ? 16 : 0) | (a.once ? 32 : 0)];
+  const out = [a.layers.length | (a.timing === 'beats' ? 16 : 0) | (a.once ? 32 : 0) | (a.custom ? 64 : 0)];
+  if (a.custom) { out.push(a.custom.length); for (const c of a.custom) out.push(...c); }
   const times = layerTimes(a);
   a.layers.forEach((l, i) => {
     const m = MOVES[l.move], prev = times[i - 1];
@@ -300,11 +331,20 @@ export function pack(recipe) {
 // Bytes back to the canonical recipe. The name and board aren't in the bytes: pass them.
 export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
   const b = bytes, p = { i: 0 };
-  const need = (n) => { if (p.i + n > b.length) throw new RecipeError('The animation bytes stop part way through a layer.'); };
+  const need = (n) => { if (p.i + n > b.length) throw new RecipeError('The animation bytes stop part way through.'); };
   need(1);
   const h = b[p.i++], count = h & 15, timing = h & 16 ? 'beats' : 'ms', once = !!(h & 32);
+  if (h & 128) throw new RecipeError('The animation\'s first byte has bit 7 set, which no recipe uses.');
   const step = STEP[timing], hs = HIT_STEP[timing], unit = (q) => +(q * step).toFixed(4);
   const anim = { type: 'animation', name, board, timing, once, layers: [] };
+  if (h & 64) {
+    need(1);
+    const n = b[p.i++];
+    if (n < 1 || n > MAX_CUSTOM) throw new RecipeError(`The animation says it has ${n} colours of its own; it can have 1 to ${MAX_CUSTOM}.`);
+    need(n * 3);
+    anim.custom = [];
+    for (let k = 0; k < n; k++, p.i += 3) anim.custom.push([b[p.i], b[p.i + 1], b[p.i + 2]]);
+  }
   let leds = null, prev = null;
   for (let k = 0; k < count; k++) {
     need(1);
@@ -382,7 +422,8 @@ function fromHeights(heights) {
   return { count: heights.length, heights, ranks };
 }
 
-// The colour slots from a colour set ({ red, orange, white, yellow }, any case).
+// The colour slots from a colour set ({ red, orange, white, yellow }, any case): 0-5. A recipe's
+// own colours (slots 6-15) are added when it plays (levels()).
 export function palette(set = {}) {
   const get = (k) => set[k] || set[k.toUpperCase()];
   const red = get('red') || [255, 0, 0], orange = get('orange') || [255, 45, 0];
@@ -524,6 +565,7 @@ function wipeAt(q, t, i, ctx) {
 // ones 1/65536 bars since it started. ctx: { drive, palette, music: { bar, kick, loud }, next }.
 export function levels(anim, t, ctx) {
   const prep = prepare(anim), n = ctx.drive.count;
+  if (anim.custom) ctx = { ...ctx, palette: ctx.palette.slice(0, COLOUR_SLOTS).concat(anim.custom) };
   const out = Array.from({ length: n }, () => ({ c: [0, 0, 0], l: 0 }));
   if (t < 0) return out;
   if (!anim.once && prep.length !== null) t %= prep.length;

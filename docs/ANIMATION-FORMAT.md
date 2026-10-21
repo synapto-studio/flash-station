@@ -18,12 +18,15 @@ One small **player** plays every animation. An animation is a short **recipe**: 
 | `board` | `core` (6 LEDs), `pulse` (8) or `any` |
 | `timing` | `ms` (times in milliseconds, steps of 10) or `beats` (times in beats, steps of 1/16; a bar is 4 beats) |
 | `once` | `true`: a one-shot (start-up, song moment) that ends when its last timed layer ends, then the next section plays. `false`: loops (a loop with timed layers repeats every time the last one ends) |
+| `custom` | Optional: up to 10 colours of the recipe's own, `[[159, 255, 82], ...]` (red, green, blue, 0–255). The first is colour **6**, the next 7, up to 15 (see Colours below) |
 | `layers` | Drawn in order: later layers go over earlier ones |
 | `steps` | For one-shots, instead of (or after) `layers`: `[{ "for": 1200, "layers": [...] }, ...]`. A step's layers start when the step does and last as long as it, unless they give their own `at` (from the step's start) or `for` (may run past the step) |
 
 **Every layer:** `move`, `leds` (`"all"` or LED numbers), `at` (when it starts, from the start of the animation; default 0), `for` (how long; left out = to the end). Each layer keeps its own time from its `at`, so a loop inside it starts at its beginning (`phase` shifts it).
 
 **Colours** are slots in the routine's colour set, never "red": **1** red, **2** orange, **3** white, **4** yellow (Core's fourth colour; Pulse uses its orange), **5** the station box's warm white (255, 247, 234, fixed), **0** off. Any animation works with any colour set.
+
+**Custom colours** (6–15) are fixed colours the recipe carries itself, for a colour that must look the same whatever the routine's colour set is (a song moment copied from a DJ's screen). `"custom": [[159, 255, 82]]` makes colour 6 that green; a layer uses it like any other slot (`"colour": 6`, `"colour": [2, 6]`, `"colours": [6, 1]`), so one animation can mix the set's orange with its own green. Each costs 3 bytes. Only as many as the list has can be used: `"colour": 7` with one custom colour is an error. Like every slot, they still go through the layer's level and the routine's brightness.
 
 **Levels** are 0–255. On the way out each LED's level is squared (so dim looks dim) and then scaled by the routine's brightness, as both engines do today: `k = level² / 255 × brightness / 255`, `rgb = colour × k / 255`.
 
@@ -57,10 +60,11 @@ A "flash" is a `pulse` with a short rise and fall; a "strobe on every beat for 2
 
 Packed by `pack()` and read by `unpack()`; the name and board are kept outside the bytes.
 
-- **Header, 1 byte:** bits 0–3 number of layers (1–15), bit 4 timing in beats, bit 5 one-shot.
+- **Header, 1 byte:** bits 0–3 number of layers (1–15), bit 4 timing in beats, bit 5 one-shot, bit 6 it has custom colours (bit 7 is unused, 0).
+- **Custom colours,** only if bit 6: a count byte (1–10), then 3 bytes (red, green, blue) for each, colour 6 first. A recipe without them has no extra bytes, so today's recipes are unchanged.
 - **Each layer:** 1 byte: bits 0–3 the move's number (table order above: glow 0 … flicker 12), bits 4–5 when it starts (0 at the start, 1 when the layer before ends, 2 with the layer before, 3 at a time given next), bit 6 it has a length, bit 7 same LEDs as the layer before. Then the LED byte (bit 0 = LED 1) unless bit 7, the start time if 3, the length if bit 6, then the move's settings in the order of the table.
 - **A time** is 1 byte `0xxxxxxx` (0–127 units) or 2 bytes `1xxxxxxx xxxxxxxx` (up to 32,767 units). Units: 10 ms, or 1/16 beat. `lag` is 1 signed byte of the same units.
-- **Other settings:** colour, level, % width, loud, chance, twist: 1 byte. `fade`'s colours: 1 byte (from in the high 4 bits). `drift`'s colours: 2 bytes, 4 slots of 4 bits, 0 = unused. Levels `[from, to]`: 2 bytes. Positions: 1 signed byte = % / 2. Hits: a count, then on, off (5 ms units), peak.
+- **Other settings:** colour (a slot, 0–15), level, % width, loud, chance, twist: 1 byte. `fade`'s colours: 1 byte (from in the high 4 bits). `drift`'s colours: 2 bytes, 4 slots of 4 bits, 0 = unused. Levels `[from, to]`: 2 bytes. Positions: 1 signed byte = % / 2. Hits: a count, then on, off (5 ms units), peak.
 - **Style byte** (last, for the moves that have one), from bit 0: `fade` blend (2 bits), curve (3); `pulse` up (3), down (3), blend (2); `wave` curve (3), round, land, back (1 each), blend (2); `fill` curve (3), side (1: 0 above, 1 below), blend (2); `wipe` curve (3). Curves: 0 linear, 1 ease, 2 in, 3 out, 4 exp. Blends: 0 over, 1 mask, 2 tint, 3 lift.
 
 ## Rules for a firmware player (R5, R6)
@@ -68,6 +72,7 @@ Packed by `pack()` and read by `unpack()`; the name and board are kept outside t
 - Time inside the player: whole ms, or for beat-timed animations 1/65,536 of a bar (a recipe's 1/16 beat × 1024). The beat clock comes from the drive's tempo grid: the bar's phase (shown `leadMs` early) for locked pulses, and a smooth count of bars since the section started for everything else.
 - `ease(x) = x·x·(765 − 2x) / 65025`; progress through a length is `t × 255 / len`; `mix(a, b, k) = (a(255 − k) + b·k) / 255`; going down, `a − (a − b)·k / 255` (never divide a negative number). The `exp` curve is the 24-entry table in `js/player.js` (exp(−x) in quarters, as the plug-in animation in pulsetest 1.5+).
 - Heights are 0–10,000 from the plug; recipe positions × 100.
+- Colour slots: 0–5 from the routine's colour set, 6–15 from the playing animation's own custom colours. Each section uses its own: a start-up's colour 6 and the ambient's colour 6 can be different colours.
 - Check against `js/player.js` frame for frame, like `run_equiv.js` does for today's routine.
 
 ## Making an animation in a session (the Animation lab, R3)
@@ -77,7 +82,7 @@ Jonny describes the animation in a Claude Code session ("on the drop: white fill
 1. Writes the recipe to a file in the scratchpad, using the moves above. Say in `notes` what it should look like. Times are ms unless `"timing": "beats"`; music-following ones (Pulse only) are in beats, 4 to a bar.
 2. Makes a preview clip: `node tools/animation-clip.mjs recipe.json --out drop.mp4` (add `--music demo --start 8` for a beat-timed one, `--colours "red=0,70,255 orange=0,255,230 white=190,235,255"` for a colour set: the named Pulse sets are in the firmware repo's `pulsetest/colour_sets.py`, as white, red, orange; `--then builtin` to see a start-up run into the ambient look). It checks the recipe first and prints the lab's plain error if it's wrong, then films the lab: the drive, its timeline and a playhead, with the music's sound. It also writes a `.png` still.
 3. Sends the `.mp4` (SendUserFile) and the recipe in a ```` ```json ```` block, with its size in bytes.
-4. Changes it when Jonny says "slower" (longer `every`/`for`), "more orange" (colour slot 2, or a `tint` layer), and sends a new clip.
+4. Changes it when Jonny says "slower" (longer `every`/`for`), "more orange" (colour slot 2, or a `tint` layer), and sends a new clip. A colour that has to be exact whatever the colour set (a green from a DJ's screen, a brand colour) goes in `custom` as colour 6 onwards, rather than borrowing a set slot; `--colours` doesn't change those.
 
 Jonny copies the recipe (the whole message is fine: the lab finds the recipe in it) into **Routines → Animation lab**, checks it in his own colours and on his drive's profile, and saves it. The lab:
 

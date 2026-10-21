@@ -3,7 +3,7 @@
 // and names and writes its file in the library's animations/ folder. The lab on screen is
 // js/lab-tab.js; the recipe format is docs/ANIMATION-FORMAT.md.
 
-import { normalise, pack, length, MOVES, RECIPE_KEYS, RecipeError } from './player.js';
+import { normalise, pack, length, MOVES, RECIPE_KEYS, COLOUR_SLOTS, RecipeError } from './player.js';
 import { isPalette } from './palettes.js';
 import { isRoutine } from './routines.js';
 import { isPhaseFile } from './phases.js';
@@ -167,9 +167,26 @@ function timesOf(anim) {
   return out;
 }
 
+// Every colour slot a recipe's layers use.
+function slotsUsed(anim) {
+  const used = new Set();
+  for (const l of anim.layers) {
+    for (const [name, type] of MOVES[l.move].params) {
+      if (type === 'colour') used.add(l[name]);
+      else if (type === 'colour2' || type === 'colours') l[name].forEach((c) => used.add(c));
+    }
+  }
+  return used;
+}
+
 // Things that work but are probably not what was meant.
 export function warningsFor(anim) {
   const w = [];
+  if (anim.custom) {
+    const used = slotsUsed(anim);
+    const idle = anim.custom.map((_, k) => COLOUR_SLOTS + k).filter((c) => !used.has(c));
+    if (idle.length) w.push(`Custom colour${idle.length === 1 ? ` ${idle[0]} isn't` : `s ${idle.join(', ')} aren't`} used by any layer (each costs 3 bytes on the drive). Use it as "colour": ${idle[0]}, or take it out of "custom".`);
+  }
   if (anim.timing === 'ms') {
     const tiny = timesOf(anim).filter(([, v]) => v <= 20);
     if (tiny.length) w.push(`Some times are 20 ms or less (${tiny.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}). Times are in ms unless the recipe says "timing": "beats".`);
@@ -203,7 +220,9 @@ export function span(anim, v) {
 export function describe(anim, bytes) {
   const len = length(anim), n = anim.layers.length;
   const how = anim.once ? `plays once, ${span(anim, len)}` : len === null ? 'keeps going' : `loops every ${span(anim, len)}`;
-  return `${BOARD[anim.board]}, ${anim.timing === 'beats' ? 'follows the beat' : 'timed in ms'}, ${how}. ${n} layer${n === 1 ? '' : 's'}, ${bytes} bytes on the drive.`;
+  const own = anim.custom ? anim.custom.length : 0;
+  const mine = own ? `, ${own} colour${own === 1 ? '' : 's'} of its own (${own === 1 ? 'colour 6' : `colours 6 to ${5 + own}`})` : '';
+  return `${BOARD[anim.board]}, ${anim.timing === 'beats' ? 'follows the beat' : 'timed in ms'}, ${how}. ${n} layer${n === 1 ? '' : 's'}${mine}, ${bytes} bytes on the drive.`;
 }
 
 // ---------------------------------------------------------------- the lab's timeline
@@ -239,13 +258,14 @@ export function animationFileName(recipe) {
 }
 
 // The recipe as it's saved: named, its board, timing and once written out, then its notes,
-// layers and steps as they were written (steps stay steps).
+// own colours, layers and steps as they were written (steps stay steps).
 export function makeAnimation(recipe, name = recipe.name) {
   const clean = String(name == null ? '' : name).trim();
   if (!clean) throw new LabError('Give the animation a name.');
   const anim = normalise({ ...recipe, name: clean });
   const out = { type: 'animation', name: clean, board: anim.board, timing: anim.timing, once: anim.once };
   if (recipe.notes !== undefined) out.notes = recipe.notes;
+  if (anim.custom) out.custom = anim.custom;
   if (recipe.layers !== undefined) out.layers = recipe.layers;
   if (recipe.steps !== undefined) out.steps = recipe.steps;
   return out;
@@ -257,9 +277,10 @@ const inline = (v) => (Array.isArray(v) ? `[${v.map(inline).join(', ')}]`
   : v && typeof v === 'object' ? `{ ${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${inline(x)}`).join(', ')} }`
   : JSON.stringify(v));
 export function recipeText(recipe) {
-  const head = RECIPE_KEYS.filter((k) => !['notes', 'layers', 'steps'].includes(k) && recipe[k] !== undefined).map((k) => `${JSON.stringify(k)}: ${inline(recipe[k])}`);
+  const head = RECIPE_KEYS.filter((k) => !['custom', 'notes', 'layers', 'steps'].includes(k) && recipe[k] !== undefined).map((k) => `${JSON.stringify(k)}: ${inline(recipe[k])}`);
   const parts = [`  ${head.join(', ')}`];
   if (recipe.notes !== undefined) parts.push(`  "notes": ${inline(recipe.notes)}`);
+  if (recipe.custom !== undefined) parts.push(`  "custom": ${inline(recipe.custom)}`);
   const layers = (ls, pad) => ls.map((l) => `${pad}${inline(l)}`).join(',\n');
   if (recipe.layers !== undefined) parts.push(`  "layers": [\n${layers(recipe.layers, '    ')}\n  ]`);
   if (recipe.steps !== undefined) {

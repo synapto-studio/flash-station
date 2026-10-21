@@ -131,8 +131,68 @@ test('a bad recipe gets a plain error saying what to fix', () => {
   bad({ board: 'core', layers: [{ move: 'glow', leds: [7] }] }, /LED 7 isn't on the board \(1 to 6\)/);
   bad({ layers: [{ move: 'fade', level: [0, 255] }] }, /needs a length/);
   bad({ layers: [{ move: 'kick' }] }, /timing must be "beats"/);
-  bad({ layers: [{ move: 'glow', colour: 9 }] }, /"colour" must be a whole number from 0 to 5/);
+  bad({ layers: [{ move: 'glow', colour: 6 }] }, /Layer 1 \(glow\): colour 6 is one of the recipe's own colours \(6 to 15\), but the recipe has none\. Add "custom"/);
+  bad({ layers: [{ move: 'glow', colour: 16 }] }, /"colour" must be a whole number from 0 to 15 \(got 16\)/);
   bad({ layers: [{ move: 'glow', speed: 3 }] }, /"speed" isn't a setting of "glow"/);
   bad({ once: true, layers: [{ move: 'glow' }] }, /needs at least one layer with a length/);
   assert.throws(() => P.unpack(Uint8Array.of(2, 0, 1, 1)), /stop part way/);
+});
+
+// ---------------------------------------------------------------- the recipe's own colours
+const GREEN = [159, 255, 82], BLUE = [0, 40, 255];
+const OWN = { name: 'Orange to green', board: 'pulse', custom: [GREEN, BLUE], layers: [
+  { move: 'glow', leds: [1, 2], colour: 2, for: 1000 },
+  { move: 'fade', leds: [1, 2], at: 1000, for: 1000, colour: [2, 6], level: [255, 255], curve: 'linear' },
+  { move: 'drift', leds: [3, 4], colours: [6, 1, 7], every: 500 },
+  { move: 'glow', leds: [5, 6, 7, 8], colour: 7 }] };
+
+test('custom colours: a count byte and 3 bytes each after the header, and back', () => {
+  const bytes = P.pack(OWN), plain = P.pack({ ...OWN, custom: undefined, layers: OWN.layers.map((l) => (l.colours ? { ...l, colours: [3, 1, 2] } : { ...l, colour: Array.isArray(l.colour) ? [2, 3] : l.colour === 7 ? 3 : l.colour })) });
+  assert.equal(bytes[0] & 64, 64);
+  assert.equal(plain[0] & 64, 0);
+  assert.deepEqual([...bytes.slice(1, 8)], [2, ...GREEN, ...BLUE]);
+  assert.equal(bytes.length, plain.length + 1 + 2 * 3);
+  const back = P.unpack(bytes, { name: OWN.name, board: OWN.board });
+  assert.deepEqual(back, P.normalise(OWN));
+  assert.deepEqual(back.custom, [GREEN, BLUE]);
+  assert.deepEqual(P.pack(back), bytes);
+  // an empty list is the same as none, and recipes without any are byte for byte as before
+  assert.deepEqual(P.pack({ ...OWN, custom: [], layers: [{ move: 'glow' }] }), P.pack({ layers: [{ move: 'glow' }] }));
+  for (const r of RECIPES) assert.equal(P.pack(r)[0] & 64, 0, r.name);
+  assert.throws(() => P.unpack(Uint8Array.of(64 | 1, 11)), /1 to 10/);
+  assert.throws(() => P.unpack(Uint8Array.of(64 | 1, 2, 1, 2, 3)), /stop part way/);
+});
+
+test('custom colours play as fixed RGB with any colour set, next to the set\'s own slots', () => {
+  const drive = P.sectionDrive('pulse');
+  for (const colours of [{}, { red: [10, 20, 30], orange: [200, 100, 0], white: [9, 9, 9] }]) {
+    const show = new P.Show({ sections: [OWN], drive, colours }), pal = P.palette(colours);
+    const at = (ms) => show.levels(ms);
+    assert.deepEqual(at(500)[0].c, pal[2], 'orange from the set');
+    assert.deepEqual(at(1999)[0].c.map((v, j) => Math.abs(v - GREEN[j]) <= 1), [true, true, true], 'fades to the fixed green');
+    assert.deepEqual(at(0)[2].c, GREEN, 'drift starts on colour 6');
+    assert.deepEqual(at(500)[2].c, pal[1], 'then the set\'s red');
+    assert.deepEqual(at(1000)[2].c, BLUE, 'then colour 7');
+    for (let i = 4; i < 8; i++) assert.deepEqual(at(100)[i].c, BLUE);
+  }
+});
+
+test('each section of a show uses its own custom colours', () => {
+  const first = { once: true, custom: [BLUE], layers: [{ move: 'glow', colour: 6, for: 500 }] };
+  const loop = { custom: [GREEN], layers: [{ move: 'glow', colour: 6 }] };
+  const show = new P.Show({ sections: [first, loop], drive: P.sectionDrive('core') });
+  assert.deepEqual(show.levels(100)[0].c, BLUE);
+  assert.deepEqual(show.levels(600)[0].c, GREEN);
+});
+
+test('custom colours: a bad list gets a plain error', () => {
+  const bad = (r, re) => assert.throws(() => P.pack(r), re);
+  bad({ custom: [GREEN], layers: [{ move: 'glow', colour: 7 }] }, /colour 7 isn't one of this recipe's own colours: its "custom" list has 1 \(colour 6\)/);
+  bad({ custom: [GREEN, BLUE], layers: [{ move: 'drift', colours: [1, 8], every: 100 }] }, /colour 8 isn't one.*has 2 \(colours 6 to 7\)/);
+  bad({ custom: Array(11).fill(GREEN), layers: [{ move: 'glow' }] }, /"custom" has 11 colours; the most is 10 \(colours 6 to 15\)/);
+  bad({ custom: [GREEN, [300, 0, 0]], layers: [{ move: 'glow' }] }, /custom colour 2 \(colour 7\) must be \[red, green, blue\], each a whole number from 0 to 255/);
+  bad({ custom: [[1, 2]], layers: [{ move: 'glow' }] }, /custom colour 1 \(colour 6\) must be \[red, green, blue\]/);
+  bad({ custom: GREEN, layers: [{ move: 'glow' }] }, /custom colour 1 \(colour 6\) must be/);
+  bad({ custom: { 6: GREEN }, layers: [{ move: 'glow' }] }, /"custom" is a list of the recipe's own colours in square brackets/);
+  bad({ colours: [GREEN], layers: [{ move: 'glow' }] }, /"colours" isn't part of a recipe \(did you mean "custom"\?\)/);
 });

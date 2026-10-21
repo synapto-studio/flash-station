@@ -50,6 +50,9 @@ const BAD = [
   ['{ "name": "A", "layers": [ { "move": "glow" } ] , "once": true }', /one-shot animation \("once"\) needs at least one layer with a length/],
   ['{ "name": "glacier", "family": "pulse", "colours": { "white": [1, 2, 3], "red": [1, 2, 3], "orange": [1, 2, 3] } }', /This is a colour set \("glacier"\)/],
   ['{ "move": "glow", "colour": 2 }', /This is one layer\. Wrap it as a recipe/],
+  ['{ "name": "A", "custom": [[159, 255, 82]], "layers": [ { "move": "glow", "colour": 7 } ] }', /Layer 1 \(glow\): colour 7 isn't one of this recipe's own colours/],
+  ['{ "name": "A", "layers": [ { "move": "glow", "colour": 6 } ] }', /the recipe has none\. Add "custom": \[\[r, g, b\]\] to the recipe: the first is colour 6/],
+  ['{ "name": "A", "custom": [[159, 255]], "layers": [ { "move": "glow", "colour": 6 } ] }', /custom colour 1 \(colour 6\) must be \[red, green, blue\]/],
   ['[ { "move": "glow" } ]', /This is a list of layers/],
 ];
 
@@ -70,6 +73,21 @@ test('warnings: ms times that look like beats, and beat timing on a Core', () =>
   assert.deepEqual(L.readRecipe('{ "name": "A", "layers": [ { "move": "breathe", "every": 30 } ] }').warnings, []);
   assert.match(L.readRecipe('{ "name": "A", "board": "core", "timing": "beats", "layers": [ { "move": "breathe", "every": 4 } ] }').warnings[0], /Core has no microphone/);
   assert.deepEqual(L.readRecipe(CLEAN).warnings, []);
+  assert.match(L.readRecipe('{ "name": "A", "custom": [[1, 2, 3], [4, 5, 6]], "layers": [ { "move": "glow", "colour": 6 } ] }').warnings[0], /^Custom colour 7 isn't used by any layer/);
+  assert.deepEqual(L.readRecipe('{ "name": "A", "custom": [[1, 2, 3]], "layers": [ { "move": "fade", "for": 100, "colour": [2, 6] } ] }').warnings, []);
+});
+
+test('a recipe with its own colours reads, describes, saves and opens again with them', async () => {
+  const text = '```json\n{ "type": "animation", "name": "Orange to green", "board": "pulse", "timing": "beats",\n  "custom": [[159, 255, 82]],\n  "layers": [ { "move": "fade", "colour": [2, 6], "for": 2 }, { "move": "glow", "colour": 6, "at": 2, "for": 2 } ] }\n```';
+  const r = L.readRecipe(text);
+  assert.deepEqual(r.anim.custom, [[159, 255, 82]]);
+  assert.equal(r.bytes, P.pack(r.recipe).length);
+  assert.equal(L.describe(r.anim, r.bytes), `Pulse, follows the beat, loops every 1 bar. 2 layers, 1 colour of its own (colour 6), ${r.bytes} bytes on the drive.`);
+  assert.match(L.recipeText(r.recipe), /\n  "custom": \[\[159, 255, 82\]\],\n  "layers"/);
+  const lib = new Library(new MemoryStore());
+  await lib.saveAnimation(r.recipe);
+  const saved = await lib.store.read('animations', 'pulse-orange-to-green.json');
+  assert.deepEqual(L.readRecipe(saved).anim, r.anim);
 });
 
 test('every built-in recipe opens in the lab as text and reads back the same', () => {
