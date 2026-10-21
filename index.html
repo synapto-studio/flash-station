@@ -297,6 +297,70 @@
             <p class="note" id="labSaveMsg" role="status"></p>
           </div>
         </div>
+        <h2 id="smTitle">Song moments</h2>
+        <p class="note">A Pulse can recognise a moment in a song from what its mic hears, and play an animation right there, like a white flash on the drop. Add a clip of the song, mark the bars the drive listens for and when the animation plays, check it on the drive, then save it.</p>
+        <p class="note" id="smCoreNote" hidden>Song moments are for Pulse drives: Core has no microphone. Choose Pulse at the top of the tab.</p>
+        <div id="smBody">
+          <div class="rt-controls">
+            <label>Song <select id="smSong"></select></label>
+            <label class="btn sm-file">Add a song clip<input id="smFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aiff,.flac,.ogg"></label>
+            <label>Saved <select id="smSaved"></select></label>
+            <button class="btn" id="smOpenBtn" type="button">Open</button>
+          </div>
+          <p class="note" id="smSongNote">The clip is copied into the library's songs folder. It stays on this computer and is never uploaded.</p>
+          <canvas id="smOverview" class="sm-overview" aria-label="The whole song. Click to move the close-up"></canvas>
+          <canvas id="smDetail" class="sm-detail" aria-label="Close-up of the song with beats and bars. Drag the orange band (Listen for) or the orange line (Play at). Click somewhere else to play there"></canvas>
+          <p class="note">Click where the animation should start: Play at goes to the nearest beat, and the drive listens to the bars before it. Drag the orange band to listen somewhere else, or the orange line to play later. Play at can't go before "recognised by here". Bar numbers are along the top.</p>
+          <div class="lab-msg" id="smMsg" role="status" aria-live="polite"></div>
+          <div class="sm-marks">
+            <div class="rt-controls">
+              <label>Listen for <select id="smBars"></select></label>
+              <span class="sm-val" id="smListenText">–</span>
+              <button class="btn quiet" id="smListenBack" type="button" aria-label="Listen a beat earlier">a beat earlier</button>
+              <button class="btn quiet" id="smListenOn" type="button" aria-label="Listen a beat later">a beat later</button>
+            </div>
+            <div class="rt-controls">
+              <span>Play at</span> <strong class="sm-val" id="smPlayAt">–</strong>
+              <button class="btn quiet" id="smPlayBack" type="button" aria-label="Play a beat earlier">a beat earlier</button>
+              <button class="btn quiet" id="smPlayOn" type="button" aria-label="Play a beat later">a beat later</button>
+            </div>
+            <div class="rt-controls">
+              <label>BPM <input id="smBpm" type="number" min="60" max="220" step="0.01" style="width:100px"></label>
+              <label>Bar 1 at (s) <input id="smBar1" type="number" min="0" step="0.001" style="width:110px"></label>
+              <button class="btn quiet" id="smBarShift" type="button">Bars start a beat later</button>
+            </div>
+          </div>
+          <div class="sm-preview">
+            <div class="rt-stage sm-stage"><div class="rt-board" id="smBoard"></div><div class="rt-clock" id="smClock"></div></div>
+            <div>
+              <div class="rt-controls">
+                <label>Animation <select id="smAnim"></select></label>
+                <label>Colours <select id="smColours"></select></label>
+                <label>Room <select id="smRoom"><option value="home">Home</option><option value="bar">Bar</option><option value="club" selected>Club</option><option value="rig">Big rig</option></select></label>
+              </div>
+              <p class="note" id="smAnimNote"></p>
+              <div class="rt-controls">
+                <button class="btn" id="smPlay" type="button">Play</button>
+                <button class="btn" id="smRestart" type="button">From before listening</button>
+                <label class="lab-check"><input type="checkbox" id="smSound" checked> Sound</label>
+              </div>
+              <input id="smScrub" class="rt-scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub through the preview">
+              <p class="note" id="smPvNote"></p>
+              <fieldset class="sm-repeat">
+                <legend>When the song plays the moment again</legend>
+                <label class="lab-check"><input type="radio" name="smRepeat" value="every" checked> Every time</label>
+                <label class="lab-check"><input type="radio" name="smRepeat" value="first"> First time only</label>
+                <span class="note" id="smRepeatNote"></span>
+              </fieldset>
+              <div class="rt-controls">
+                <label>Name <input id="smName" type="text" maxlength="40" placeholder="Poison drop"></label>
+                <button class="btn" id="smSave" type="button" disabled>Save song moment</button>
+                <button class="btn quiet" id="smCheck" type="button" disabled>Check against my other songs</button>
+              </div>
+              <p class="note" id="smSaveMsg" role="status"></p>
+            </div>
+          </div>
+        </div>
         <h2>Tune it</h2>
         <div class="rt-fields" id="rtFields"></div>
         <button class="btn quiet" id="rtReset" type="button">Reset to defaults</button>
@@ -352,7 +416,7 @@
     <section class="panel" id="p-library" role="tabpanel" aria-labelledby="t-library" hidden>
       <div class="wide">
         <h1>Library</h1>
-        <p class="lead">A folder on this computer holding your engines, phase files, routines, animations and the drive register. Nothing in it is uploaded.</p>
+        <p class="lead">A folder on this computer holding your engines, phase files, routines, animations, song clips and song moments, and the drive register. Nothing in it is uploaded.</p>
         <div class="row">
           <button type="button" class="btn" id="pickLibBtn">Choose library folder</button>
           <button type="button" class="btn quiet" id="addEngineBtn">Add an engine file</button>
