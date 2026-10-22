@@ -67,6 +67,12 @@ Packed by `pack()` and read by `unpack()`; the name and board are kept outside t
 - **Other settings:** colour (a slot, 0–15), level, % width, loud, chance, twist: 1 byte. `fade`'s colours: 1 byte (from in the high 4 bits). `drift`'s colours: 2 bytes, 4 slots of 4 bits, 0 = unused. Levels `[from, to]`: 2 bytes. Positions: 1 signed byte = % / 2. Hits: a count, then on, off (5 ms units), peak.
 - **Style byte** (last, for the moves that have one), from bit 0: `fade` blend (2 bits), curve (3); `pulse` up (3), down (3), blend (2); `wave` curve (3), round, land, back (1 each), blend (2); `fill` curve (3), side (1: 0 above, 1 below), blend (2); `wipe` curve (3). Curves: 0 linear, 1 ease, 2 in, 3 out, 4 exp. Blends: 0 over, 1 mask, 2 tint, 3 lift.
 
+## On a Pulse (R5, pulsetest 2.5)
+
+- **Moves:** everything but `hits`, `twinkle` and `flicker` (no room on the ATtiny1614). A Pulse recipe with them gets a plain error; an `any` recipe sent to a Pulse too. The song moments demo engine (2.1) has only glow, fade, breathe, drift, pulse and kick.
+- **The show** (`js/show.js`): what a Pulse engine 2 plays, in the pages after its routine: the 8 LEDs' heights, then the start-up, ambient, plug-in and heartbeat recipes (each 2 bytes of length, then `pack()`'s bytes), then the song moments (flags, delay, print, animation). 2.5 has room for 256 bytes (today's looks: 189).
+- **Times:** beat-timed times go up to 511.9 beats (8191 sixteenths), ms ones to 327.67 s, so every sum the drive works out fits 32 bits. Hits fade by `peak × (255 − fadeTo) × progress / 65025`, progress being the 0–255 through the hit, as every move's.
+
 ## Rules for a firmware player (R5, R6)
 
 - Time inside the player: whole ms, or for beat-timed animations 1/65,536 of a bar (a recipe's 1/16 beat × 1024). The beat clock comes from the drive's tempo grid: the bar's phase (shown `leadMs` early) for locked pulses, and a smooth count of bars since the section started for everything else.

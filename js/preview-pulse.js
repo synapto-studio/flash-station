@@ -229,7 +229,9 @@ const PulseEngine = (function () {
     return ((lg * 1541) >>> 8) + SPL_OFFSET_X16 + S.micTrimDb * 16;
   }
 
-  function stage2(st, S) {
+  // opts.startupMs: when the tempo grid's first downbeat comes (default: the start-up's end from
+  // the settings; Pulse engine 2 takes it from its start-up animation: js/show.js)
+  function stage2(st, S, opts) {
     var n = st.n, leds = new Uint8Array(n * 24);
     var kOn = new Uint8Array(n), sOn = new Uint8Array(n), loud = new Int16Array(n), gains = new Uint8Array(n * 3);
     var phase = new Uint16Array(n), bpm = new Float32Array(n), conf = new Uint8Array(n);
@@ -243,7 +245,7 @@ const PulseEngine = (function () {
     var fade = S.kickFadeMs < 11 ? 11 : S.kickFadeMs, KICK_KEEP = 256 - fl((2621 + fl(fade / 2)) / fade);
     var G = { start16: 0, period16: barFromBpmX10(S.bpmX10), min16: barFromBpmX10(S.bpmMax * 10), max16: barFromBpmX10(S.bpmMin * 10),
               lastKick: 0, hk: [0, 0, 0, 0, 0, 0, 0, 0], hs: [0, 0, 0, 0, 0, 0, 0, 0], off: 0, conf: 0, lastEst: 0 };
-    var t0 = ((startMs + pe[6]) * 16) >>> 0;
+    var t0 = ((startMs + (opts && opts.startupMs != null ? opts.startupMs : pe[6])) * 16) >>> 0;
     while (((t0 - startMs * 16) | 0) > 0) t0 = (t0 - G.period16) >>> 0;
     G.start16 = t0;
 

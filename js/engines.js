@@ -68,6 +68,30 @@ export const LAYOUTS = {
     ['snareMinPct', 'u8', 'beat', 'Snare: size vs recent snares (%)'],
     ['snareFloorUv', 'u16', 'beat', 'Snare: minimum level (µV)'],
   ],
+  // Pulse engine 2 (pulsetest 2.5 on, layout byte 2): the looks are recipes in the show (js/show.js)
+  // after the routine; this page keeps the colour set, tempo and detectors, and where the show is.
+  'SOTA.PLS2': [
+    ['tag', 'tag'], ['layout', 'u8'],
+    ['brightness', 'u8', 'shared', 'Overall brightness (0–255)'],
+    ['white', 'rgb', 'shared', 'White'], ['red', 'rgb', 'shared', 'Red'], ['orange', 'rgb', 'shared', 'Orange'],
+    ['bpmX10', 'u16', 'standard', 'Starting tempo × 10 (1740 = 174 BPM)'],
+    ['bpmMin', 'u8', 'beat', 'Slowest tempo it locks to (BPM)'],
+    ['bpmMax', 'u8', 'beat', 'Fastest tempo it locks to (BPM)'],
+    ['leadMs', 'u8', 'beat', 'Show the beat this early (ms)'],
+    ['micTrimDb', 'i8', 'beat', 'Mic calibration (dB)'],
+    ['kickFadeMs', 'u16', 'beat', 'Surge fade (ms)'],
+    ['kickMin', 'u8', 'beat', 'Surge for the smallest kicks (0–255)'],
+    ['kickJumpX10', 'u8', 'beat', 'Kick: jump needed (tenths)'],
+    ['kickLoudX10', 'u8', 'beat', 'Kick: loud next to the music (tenths)'],
+    ['kickMinPct', 'u8', 'beat', 'Kick: size vs recent kicks (%)'],
+    ['kickFloorUv', 'u16', 'beat', 'Kick: minimum level (µV)'],
+    ['kickGapMs', 'u16', 'beat', 'Shortest gap between kicks (ms)'],
+    ['snareJumpX10', 'u8', 'beat', 'Snare: jump needed (tenths)'],
+    ['snareLoudX10', 'u8', 'beat', 'Snare: loud next to the music (tenths)'],
+    ['snareMinPct', 'u8', 'beat', 'Snare: size vs recent snares (%)'],
+    ['snareFloorUv', 'u16', 'beat', 'Snare: minimum level (µV)'],
+    ['showPage', 'u8'], ['showLen', 'u16'], ['showCrc', 'u16'], ['spare', 'pad19'],
+  ],
   'SOTA.MIC': [
     ['tag', 'tag'], ['layout', 'u8'],
     ['brightness', 'u8', 'shared', 'Overall brightness (0–255)'],
@@ -87,20 +111,23 @@ export const LAYOUTS = {
   ],
 };
 
-const SIZE = { u8: 1, i8: 1, u16: 2, u32: 4, rgb: 3, tag: 8, cranks: 60 };
-export const layoutSize = (tag) => LAYOUTS[tag].reduce((n, [, t]) => n + SIZE[t], 0);
+const SIZE = { u8: 1, i8: 1, u16: 2, u32: 4, rgb: 3, tag: 8, cranks: 60, pad19: 19 };
+// A tag's fields; SOTA.PLS has two layouts (its layout byte: 1, or 2 for Pulse engine 2).
+export const layoutOf = (tag, layout = 1) => LAYOUTS[tag === 'SOTA.PLS' && layout === 2 ? 'SOTA.PLS2' : tag];
+export const layoutSize = (tag, layout = 1) => layoutOf(tag, layout).reduce((n, [, t]) => n + SIZE[t], 0);
 
 export function unpackSettings(tag, bytes) {
   const out = {};
   let o = 0;
   const u16 = (i) => bytes[i] | (bytes[i + 1] << 8);
-  for (const [name, type] of LAYOUTS[tag]) {
+  for (const [name, type] of layoutOf(tag, bytes[8])) {
     if (type === 'u8') out[name] = bytes[o];
     else if (type === 'i8') out[name] = (bytes[o] << 24) >> 24;
     else if (type === 'u16') out[name] = u16(o);
     else if (type === 'u32') out[name] = (u16(o) + u16(o + 2) * 65536) >>> 0;
     else if (type === 'rgb') out[name] = [bytes[o], bytes[o + 1], bytes[o + 2]];
     else if (type === 'tag') out[name] = String.fromCharCode(...bytes.subarray(o, o + 8));
+    else if (type === 'pad19') { o += SIZE[type]; continue; }
     else if (type === 'cranks') {
       out[name] = [];
       for (let i = 0; i < 12; i++) {
@@ -114,7 +141,7 @@ export function unpackSettings(tag, bytes) {
 }
 
 export function packSettings(tag, s) {
-  const out = new Uint8Array(layoutSize(tag));
+  const out = new Uint8Array(layoutSize(tag, s.layout));
   let o = 0;
   const range = (name, v, lo, hi) => {
     if (!Number.isInteger(v) || v < lo || v > hi) throw new Error(`${name} must be a whole number ${lo}–${hi} (got ${v})`);
@@ -124,8 +151,9 @@ export function packSettings(tag, s) {
     out[i] = v & 0xff;
     out[i + 1] = (v >> 8) & 0xff;
   };
-  for (const [name, type] of LAYOUTS[tag]) {
+  for (const [name, type] of layoutOf(tag, s.layout)) {
     const v = s[name];
+    if (type === 'pad19') { o += SIZE[type]; continue; }
     if (type === 'u8') out[o] = range(name, v, 0, 255);
     else if (type === 'i8') out[o] = range(name, v, -128, 127) & 0xff;
     else if (type === 'u16') put16(o, range(name, v, 0, 65535));
@@ -152,8 +180,8 @@ export function packSettings(tag, s) {
   return out;
 }
 
-export function fieldsForPhase(tag, phase) {
-  return LAYOUTS[tag].filter((f) => f[2] === phase).map((f) => f[0]);
+export function fieldsForPhase(tag, phase, layout = 1) {
+  return layoutOf(tag, layout).filter((f) => f[2] === phase).map((f) => f[0]);
 }
 
 // ---------------------------------------------------------------- pulsetest image
@@ -169,14 +197,28 @@ export const PULSE = {
   BOOTEND: 0x0c,
 };
 
+// Pulse engine 2 (settings layout 2) also has a show (js/show.js): the bytes go in the pages after
+// the routine, outside the length the bootloader checks; the settings page holds the show's page,
+// length and CRC, so the trailer's CRCs (and the drive's lighting fingerprint) still cover it.
 export class PulseImage {
-  constructor(app, version = [1, 0], settings = null) {
+  constructor(app, version = [1, 0], settings = null, show = null) {
     this.app = Uint8Array.from(app);
     const i = indexOf(this.app, 'SOTA.PLS');
     if (i < 0 || i % PULSE.PAGE) throw new Error('No page-aligned SOTA.PLS settings block in this routine.');
     this.setPage = i / PULSE.PAGE;
     if (settings) this.app.set(packSettings('SOTA.PLS', settings), i);
     if (this.app.length > PULSE.APP_MAX) throw new Error(`Routine is ${this.app.length} bytes: too big (max ${PULSE.APP_MAX}).`);
+    this.layout = this.app[i + 8];
+    this.show = null;
+    if (this.layout === 2) {
+      this.show = Uint8Array.from(show || []);
+      this.showPage = Math.ceil(this.app.length / PULSE.PAGE);
+      const room = PULSE.APP_MAX - this.showPage * PULSE.PAGE;
+      if (this.show.length > room) throw new Error(`The animations and song moments come to ${this.show.length} bytes; only ${room} fit on the drive after this engine. Use shorter animations or fewer song moments.`);
+      const set = unpackSettings('SOTA.PLS', this.app.subarray(i, i + 64));
+      Object.assign(set, { showPage: this.showPage, showLen: this.show.length, showCrc: this.show.length ? crc16(this.show) : 0xffff });
+      this.app.set(packSettings('SOTA.PLS', set), i);
+    }
     this.version = version;
     this.trailer = this.makeTrailer();
   }
@@ -208,7 +250,7 @@ export class PulseImage {
     return t;
   }
 
-  // [page index, 64 bytes] for every routine page, then the trailer (what `update` sends).
+  // [page index, 64 bytes] for every routine page, the show's pages, then the trailer (what `update` sends).
   pages() {
     const out = [];
     for (let p = 0; p * PULSE.PAGE < this.app.length; p++) {
@@ -216,7 +258,20 @@ export class PulseImage {
       d.set(this.app.subarray(p * PULSE.PAGE, (p + 1) * PULSE.PAGE));
       out.push([p, d]);
     }
+    out.push(...this.showPages());
     out.push([PULSE.TRAILER_PAGE, this.trailer]);
+    return out;
+  }
+
+  // The show's pages (engine 2), which a settings send rewrites with the settings page.
+  showPages() {
+    const out = [];
+    if (!this.show) return out;
+    for (let k = 0; k * PULSE.PAGE < this.show.length; k++) {
+      const d = new Uint8Array(PULSE.PAGE).fill(0xff);
+      d.set(this.show.subarray(k * PULSE.PAGE, (k + 1) * PULSE.PAGE));
+      out.push([this.showPage + k, d]);
+    }
     return out;
   }
 
@@ -251,17 +306,22 @@ export function readEngine(mem, fileName = '') {
     const boot = slice(mem, 0, APP_START);
     const hasBoot = [...mem.keys()].some((a) => a < APP_START && mem.get(a) !== 0xff);
     const version = hasTrailer ? [trailer[11], trailer[12]] : fileVersion || [1, 0];
-    const img = new PulseImage(app, version);
+    // engine 2: the show it was built with, from the pages after the routine
+    const set = unpackSettings('SOTA.PLS', slice(mem, pls, pls + 64));
+    const show = set.layout === 2 && set.showLen ? slice(mem, APP_START + set.showPage * PULSE.PAGE, APP_START + set.showPage * PULSE.PAGE + set.showLen) : null;
+    const img = new PulseImage(app, version, null, show);
     return {
       kind: 'pulsetest',
       family: 'pulse',
       chip: 'attiny1614',
       tag: 'SOTA.PLS',
       version,
-      label: `pulsetest ${version.join('.')}`,
+      label: `pulsetest ${version.join('.')}${set.layout === 2 ? ' (engine 2)' : ''}`,
+      layout: set.layout,
       hasBootloader: hasBoot,
       boot,
       app,
+      show,
       defaults: img.settings,
       fileName,
     };
@@ -308,10 +368,11 @@ export function buildInitImage(engine, settings = null) {
     if (!engine.hasBootloader) {
       throw new Error('This pulsetest file has no bootloader in it. Use the "_full.hex" file for initialising.');
     }
-    const img = new PulseImage(engine.app, engine.version, settings);
+    const img = new PulseImage(engine.app, engine.version, settings, engine.show);
     const flash = new Uint8Array(0x4000).fill(0xff);
     flash.set(engine.boot, 0);
     flash.set(img.app, PULSE.APP_START);
+    for (const [p, d] of img.showPages()) flash.set(d, PULSE.APP_START + p * PULSE.PAGE);
     flash.set(img.trailer, PULSE.APP_START + PULSE.TRAILER_PAGE * PULSE.PAGE);
     return { flash, bootend: PULSE.BOOTEND, imageId: img.imageId(), settings: img.settings };
   }

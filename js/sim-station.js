@@ -112,9 +112,10 @@ export class SimDrive {
     const inMask = h && index < 208 && h.mask[index >> 3] & (1 << (index & 7));
     if (!h || h.imageId !== imageId || h.patch !== patch || !inMask) return this.rejected++;
     if (patch) {
-      // A settings patch may touch only the settings page and the trailer, and only on a
-      // drive whose code is the code the patch was made for.
-      if (index !== h.setPage && index !== PULSE.TRAILER_PAGE) return this.rejected++;
+      // A settings patch may touch only the settings page, the pages after the routine (engine 2's
+      // show) and the trailer, and only on a drive whose code is the code the patch was made for.
+      // (The real bootloader takes any page in the header's list: the app only lists these.)
+      if (index !== h.setPage && index !== PULSE.TRAILER_PAGE && index * PULSE.PAGE < h.appLen) return this.rejected++;
       if (this.codeCrc(h.setPage) !== h.codeCrc) return this.rejected++;
     }
     const old = this.pages.get(index);

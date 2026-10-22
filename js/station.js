@@ -60,13 +60,15 @@ export function testPlan([r, g, b]) {
 
 export function patchPlan(img) {
   const pages = new Map(img.pages());
-  const header = headerFrame(img, { patch: true, pages: [img.setPage, PULSE.TRAILER_PAGE] });
-  const settings = pageFrame(img, { patch: true, index: img.setPage, data: pages.get(img.setPage) });
-  const trailer = pageFrame(img, { patch: true, index: PULSE.TRAILER_PAGE, data: pages.get(PULSE.TRAILER_PAGE) });
+  // the settings page, then (engine 2) the show's pages, then the trailer: the bootloader checks the
+  // code is the one these were made for, and writes the trailer last
+  const which = [img.setPage, ...img.showPages().map(([p]) => p), PULSE.TRAILER_PAGE];
+  const header = headerFrame(img, { patch: true, pages: which });
+  const frames = which.map((index) => pageFrame(img, { patch: true, index, data: pages.get(index) }));
   const steps = [step(wake(5000), 0, 'Wake-up call')];
   for (let copy = 0; copy < 4; copy++) {
     if (copy) steps.push(step(wake(400), 0, 'Wake-up call'));
-    steps.push(step(header, 150, `Settings, copy ${copy + 1} of 4`), step(settings, 30), step(trailer, 30));
+    steps.push(step(header, 150, `Settings, copy ${copy + 1} of 4`), ...frames.map((f) => step(f, 30)));
   }
   return steps;
 }
