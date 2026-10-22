@@ -1,6 +1,6 @@
 // Flash Station app: tabs, the Initialise flow, the library and the drive register.
 
-import { webSerialSupported, WebSerialTransport } from './serial.js';
+import { webSerialSupported, WebSerialTransport, grantedPorts, onPlugged } from './serial.js';
 import { SimChip, SimTransport } from './sim.js';
 import { DriveArt } from './drive-art.js';
 import { FAMILIES, checkBoard, initialiseBoard, explain, driveRecord } from './initialise.js';
@@ -341,20 +341,29 @@ $('connectBtn').addEventListener('click', async () => {
   refreshSteps();
 });
 
+// Chrome remembers the UPDI Friend once it has been chosen, so after the first time the page
+// picks it up by itself: when the page opens, and whenever it's plugged back in.
+function adoptFriend(port, how) {
+  if (state.transport || state.busy) return;
+  state.transport = new WebSerialTransport(port);
+  state.checked = null;
+  $('progStatus').textContent = `UPDI Friend ready (${state.transport.describe()}), ${how}.`;
+  log(`UPDI Friend ${how}: ${state.transport.describe()}`);
+  refreshEngineOptions();
+  refreshSteps();
+}
+
 async function rememberPort() {
   if (!webSerialSupported()) return;
-  const ports = await navigator.serial.getPorts();
-  const friend = ports.find((p) => (p.getInfo().usbVendorId || 0) === 0x1a86) || (ports.length === 1 ? ports[0] : null);
-  if (friend && !state.transport) {
-    state.transport = new WebSerialTransport(friend);
-    $('progStatus').textContent = `UPDI Friend ready (${state.transport.describe()}), remembered from last time.`;
-    refreshSteps();
-  }
+  const [friend] = await grantedPorts('friend');
+  if (friend) adoptFriend(friend, 'remembered from last time');
+  onPlugged('friend', (port) => adoptFriend(port, 'connected by itself'));
   navigator.serial.addEventListener('disconnect', (ev) => {
     if (state.transport && state.transport.port === ev.target) {
       state.transport = null;
       state.checked = null;
-      $('progStatus').textContent = 'The UPDI Friend was unplugged. Plug it back in and choose it again.';
+      $('progStatus').textContent = 'The UPDI Friend was unplugged. Plug it back in and it connects by itself.';
+      refreshEngineOptions();
       refreshSteps();
     }
   });
@@ -596,6 +605,7 @@ async function start() {
     await refreshLibrary();
   }
   await rememberPort();
+  await flashTab.connectRemembered();
   refreshSteps();
   previewLighting();
 }
