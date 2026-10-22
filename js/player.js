@@ -36,7 +36,7 @@ export const MOVES = {
   drift:   { id: 3, params: [['colours', 'colours'], ['level', 'level', 255], ['every', 'time'], ['phase', 'time', 0]] },
   pulse:   { id: 4, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['rise', 'time', 0], ['fall', 'time'], ['lag', 'lag', 0]],
              style: [['up', 3, CURVES, 'ease'], ['down', 3, CURVES, 'ease'], ['blend', 2, BLENDS, 'over']] },
-  hits:    { id: 5, ownLength: true, params: [['colour', 'colour', 1], ['fadeTo', 'level', 85], ['hits', 'hits']] },
+  hits:    { id: 5, notOnPulse: true, ownLength: true, params: [['colour', 'colour', 1], ['fadeTo', 'level', 85], ['hits', 'hits']] },
   wave:    { id: 6, needsFor: true, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['from', 'pos', 0], ['to', 'pos', 100], ['width', 'pct']],
              style: [['curve', 3, CURVES, 'ease'], ['round', 1, null, false], ['land', 1, null, false], ['back', 1, null, false], ['blend', 2, BLENDS, 'over']] },
   fill:    { id: 7, needsFor: true, params: [['colour', 'colour', 1], ['level', 'level', 255], ['from', 'pos', 0], ['to', 'pos', 100], ['edge', 'pct', 20]],
@@ -45,14 +45,19 @@ export const MOVES = {
              style: [['curve', 3, CURVES, 'ease']] },
   rainbow: { id: 9, params: [['level', 'level', 255], ['every', 'time'], ['phase', 'time', 0], ['lag', 'lag', 0], ['twist', 'u8', 0]] },
   kick:    { id: 10, beatsOnly: true, params: [['loud', 'u8', 85]] },
-  twinkle: { id: 11, params: [['colour', 'colour', 3], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['chance', 'u8', 64]] },
-  flicker: { id: 12, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time']] },
+  twinkle: { id: 11, notOnPulse: true, params: [['colour', 'colour', 3], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['chance', 'u8', 64]] },
+  flicker: { id: 12, notOnPulse: true, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time']] },
 };
+// Pulse engine 2 has no room for these three (Jonny, 22 Oct 2026): a recipe for a Pulse can't use them.
+export const PULSE_MOVES = Object.keys(MOVES).filter((m) => !MOVES[m].notOnPulse);
 const MOVE_BY_ID = Object.fromEntries(Object.entries(MOVES).map(([k, m]) => [m.id, k]));
 const MAX_LAYERS = 15, MAX_HITS = 40;
 
 // Time units in the bytes: 10 ms, or 1/16 of a beat. Hit lengths: 5 ms, or 1/32 of a beat.
+// The longest time: 32767 units (5.5 minutes), or for beats 8191 (512 beats less a 16th, ~3 minutes
+// at 174 BPM), so the drives' players never need more than 32-bit maths (R5).
 const STEP = { ms: 10, beats: 1 / 16 };
+const MAXQ = { ms: 32767, beats: 8191 };
 const HIT_STEP = { ms: 5, beats: 1 / 32 };
 
 // ---------------------------------------------------------------- checking a recipe
@@ -64,7 +69,10 @@ const ledCount = (board) => (board === 'core' ? 6 : 8);
 function quant(v, step, where, name, max) {
   if (!isNum(v) || v < 0) fail(where, `"${name}" must be a number, 0 or more (got ${JSON.stringify(v)}).`);
   const q = Math.round(v / step);
-  if (q > max) fail(where, `"${name}" is too long (${v}).`);
+  if (q > max) {
+    const ms = step === STEP.ms || step === HIT_STEP.ms;
+    fail(where, `"${name}" is too long (${v}): the longest is ${+(max * step).toFixed(5)} ${ms ? 'ms' : 'beats'}.`);
+  }
   if (q === 0 && v > 0) {
     const ms = step === STEP.ms || step === HIT_STEP.ms;
     fail(where, `"${name}" is ${v}, which is under one step (${ms ? `${step} ms` : `1/${Math.round(1 / step)} beat`}) and rounds to 0.${ms ? ' Times are in ms unless the recipe says "timing": "beats".' : ''}`);
@@ -163,6 +171,7 @@ export function normalise(recipe) {
     if (l.move === undefined) fail(where, `it has no "move". Moves: ${Object.keys(MOVES).join(', ')}.`);
     if (!m) fail(where, `unknown move ${JSON.stringify(l.move)}${didYouMean(l.move, Object.keys(MOVES))}. Moves: ${Object.keys(MOVES).join(', ')}.`);
     if (m.beatsOnly && timing !== 'beats') fail(where, `"${l.move}" follows the music, so the recipe's timing must be "beats".`);
+    if (m.notOnPulse && board === 'pulse') fail(where, `"${l.move}" isn't on a Pulse: there wasn't room for it on the Pulse's chip. Moves for a Pulse: ${PULSE_MOVES.join(', ')}.`);
     const c = { move: l.move, leds: normLeds(l.leds, board, where) };
     // when it starts: at the start, when the layer before ends, with it, or at a time of its own
     if (l.at !== undefined && (!isNum(l.at) || l.at < 0)) fail(where, `"at" must be a number, 0 or more (got ${JSON.stringify(l.at)}).`);
@@ -170,12 +179,12 @@ export function normalise(recipe) {
     let at = l.at || 0;
     if (at !== 0 && prev && close(at, prev.end)) at = prev.end;
     else if (at !== 0 && prev && close(at, prev.at)) at = prev.at;
-    else if (at !== 0) at = unit(quant(at, step, where, 'at', 32767));
+    else if (at !== 0) at = unit(quant(at, step, where, 'at', MAXQ[timing]));
     let len = null;
     if (m.ownLength) {
       if (l.for !== undefined) fail(where, 'hits sets its own length from its hits; leave "for" out.');
     } else if (l.for !== undefined && l.for !== null && l.for !== 0) {
-      len = unit(quant(l.for, step, where, 'for', 32767));
+      len = unit(quant(l.for, step, where, 'for', MAXQ[timing]));
     } else if (m.needsFor) fail(where, `"${l.move}" needs a length ("for").`);
     c.at = at;
     if (len !== null) c.for = len;
@@ -189,7 +198,7 @@ export function normalise(recipe) {
     const known = ['move', 'leds', 'at', ...(m.ownLength ? [] : ['for']), ...m.params.map((p) => p[0]), ...(m.style || []).map((p) => p[0])];
     for (const k of Object.keys(l)) if (!known.includes(k)) fail(where, `"${k}" isn't a setting of "${l.move}"${didYouMean(k, known)}. Its settings: ${known.slice(1).join(', ')}.`);
     const dur = m.ownLength ? hitsLength(c.hits) : len;
-    prev = { at, end: dur === null ? null : +(at + dur).toFixed(4) };
+    prev = { at, end: dur === null ? null : +(at + dur).toFixed(5) };
     out.layers.push(c);
   });
   if (once && length(out) === null) fail('Recipe', 'a one-shot animation ("once") needs at least one layer with a length.');
@@ -231,7 +240,7 @@ function normParam(v, type, name, where, timing, customs = 0) {
     case 'levels': { const a = Array.isArray(v) ? v : [v, v]; if (a.length !== 2) fail(where, `"${name}" is a level or [from, to].`); return a.map((x) => int(x, 0, 255)); }
     case 'time': {
       if (v === undefined) fail(where, `"${name}" is needed.`);
-      return +(quant(v, step, where, name, 32767) * step).toFixed(4);
+      return +(quant(v, step, where, name, MAXQ[timing]) * step).toFixed(4);
     }
     case 'lag': {
       if (!isNum(v)) fail(where, `"${name}" must be a number.`);
@@ -255,7 +264,7 @@ function normParam(v, type, name, where, timing, customs = 0) {
       const hs = HIT_STEP[timing];
       return v.map((h, k) => {
         if (!Array.isArray(h) || h.length !== 3) fail(where, `hit ${k + 1} must be [on, off, peak].`);
-        return [+(quant(h[0], hs, where, `hit ${k + 1} on`, 255) * hs).toFixed(4), +(quant(h[1], hs, where, `hit ${k + 1} off`, 255) * hs).toFixed(4), int(h[2], 0, 255)];
+        return [+(quant(h[0], hs, where, `hit ${k + 1} on`, 255) * hs).toFixed(5), +(quant(h[1], hs, where, `hit ${k + 1} off`, 255) * hs).toFixed(5), int(h[2], 0, 255)];
       });
     }
   }
@@ -267,14 +276,14 @@ function checkMove(c, where) {
   if (c.move === 'pulse' && c.rise + c.fall > c.every + 1e-9) fail(where, '"rise" and "fall" together must fit in "every".');
 }
 
-const hitsLength = (hits) => +hits.reduce((n, h) => n + h[0] + h[1], 0).toFixed(4);
+const hitsLength = (hits) => +hits.reduce((n, h) => n + h[0] + h[1], 0).toFixed(5);
 
 // When each layer starts and ends (in ms or beats), and the animation's length: a one-shot's
 // end, or a loop's cycle (null: a loop with no timed layers just runs).
 function layerTimes(anim) {
   return anim.layers.map((l) => {
     const dur = MOVES[l.move].ownLength ? hitsLength(l.hits) : (l.for || null);
-    return { at: l.at, end: dur === null ? null : +(l.at + dur).toFixed(4) };
+    return { at: l.at, end: dur === null ? null : +(l.at + dur).toFixed(5) };
   });
 }
 export function length(anim) {
@@ -373,7 +382,7 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
         const n = b[p.i++];
         need(n * 3);
         ordered[name] = [];
-        for (let j = 0; j < n; j++, p.i += 3) ordered[name].push([+(b[p.i] * hs).toFixed(4), +(b[p.i + 1] * hs).toFixed(4), b[p.i + 2]]);
+        for (let j = 0; j < n; j++, p.i += 3) ordered[name].push([+(b[p.i] * hs).toFixed(5), +(b[p.i + 1] * hs).toFixed(5), b[p.i + 2]]);
       }
     }
     if (m.style) {
@@ -382,7 +391,7 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
       for (const [name, bits, values] of m.style) { const v = s & ((1 << bits) - 1); s >>= bits; ordered[name] = values ? values[v] : !!v; }
     }
     const dur = m.ownLength ? hitsLength(ordered.hits) : (ordered.for || null);
-    prev = { at: ordered.at, end: dur === null ? null : +(ordered.at + dur).toFixed(4) };
+    prev = { at: ordered.at, end: dur === null ? null : +(ordered.at + dur).toFixed(5) };
     anim.layers.push(ordered);
   }
   if (p.i !== b.length) throw new RecipeError(`The animation bytes have ${b.length - p.i} left over at the end.`);
@@ -497,7 +506,7 @@ function moveAt(q, t, i, ctx) {
     case 'hits': {
       let tt = t;
       for (const [on, off, peak] of q.hits) {
-        if (tt < on) return [pal[q.colour], peak - fl(peak * (255 - q.fadeTo) * tt / (255 * on))];
+        if (tt < on) return [pal[q.colour], peak - fl(peak * (255 - q.fadeTo) * prog(tt, on) / 65025)];
         tt -= on;
         if (tt < off) return [pal[q.colour], 0];
         tt -= off;

@@ -37,6 +37,7 @@ When Jonny describes an animation, follow "Making an animation in a session" in 
 - `js/songs.js` song moments (R1): frame answers, prints, training, the drive's matcher (C twin in firmware `pulsetest/songmatch/`) · `test/song_experiment.mjs` R1 on real clips (needs ffmpeg; clips never committed)
 - `js/moments.js` song moments (R4): beat grid, Listen for / Play at, learning in 8 simulated rooms, moment files, what the drive plays · `js/moments-tab.js` the Song moments screen in the Routines tab · `js/moments-worker.js` learning off the screen
 - `js/player.js` animation player and recipe bytes (R2; spec `docs/ANIMATION-FORMAT.md`) · `js/animations.js` today's looks as recipes
+- `js/show.js` Pulse engine 2's show (R5): the recipes and song moments in the pages after the routine, the demo's show, `DriveShow` (what the drive plays, the firmware's twin)
 - `js/lab.js` Animation lab (R3): reads pasted recipes with plain errors, `animations/` files · `js/lab-tab.js` the lab in the Routines tab · `tools/animation-clip.mjs` preview clips
 - `js/main.js` UI · `js/drive-art.js` the drive drawing
 - `docs/ROADMAP.md` what to build next, in order, with how to check each part

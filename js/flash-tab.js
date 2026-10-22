@@ -476,7 +476,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (fs.station.transport.simulated && fs.station.transport.drive) {
         fs.station.transport.drive = drive.family === 'core'
           ? simCoreDrive(drive, engine)
-          : new SimDrive(new PulseImage(engine.app, engine.version, drive.settings));
+          : new SimDrive(new PulseImage(engine.app, engine.version, drive.settings, engine.show));
       }
       const total = planMs(plan);
       log(`${action} to ${drive.drive}: ${plan.length} sends, about ${formatDuration(total)}`);
@@ -546,7 +546,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (drive.family === 'core') {
         return { settings, plan: coreSettingsPlan(settings), routine: routineName() };
       }
-      const img = new PulseImage(engine.app, engine.version, settings);
+      const img = new PulseImage(engine.app, engine.version, settings, engine.show);
       return { img, settings: img.settings, plan: patchPlan(img), routine: routineName() };
     }, isCore()
       ? { done: 'The drive restarts its animation with the new lighting; it keeps it after unplugging.', stopped: 'The drive keeps its old lighting until a full copy arrives. Send again.' }
@@ -660,7 +660,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         const e = state.demo.find((x) => x.kind === 'pulsetest');
         let card = null;
         try { card = encodeCard({ family: 'P', number: d.number, board: d.board }); } catch {}
-        sim = new SimDrive(new PulseImage(e.app, e.version, d.settings), card);
+        sim = new SimDrive(new PulseImage(e.app, e.version, d.settings, e.show), card);
       }
       sim.announces = true;
     }
@@ -679,7 +679,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     if (!window.confirm('Send the whole engine? It takes 3 to 6 minutes. Keep the drive in the socket the whole time.')) return;
     go('Sent engine', async (drive, engine) => {
       const settings = await chosenSettings(drive, engine);
-      const img = new PulseImage(engine.app, engine.version, settings);
+      const img = new PulseImage(engine.app, engine.version, settings, engine.show);
       return { img, settings: img.settings, plan: fullPlan(img), routine: routineName() };
     }, { done: 'Unplug the drive; it restarts on the new engine.', stopped: 'The drive is marked unfinished and waits for the rest. Plug it back in and send again.', engine: true });
   });
