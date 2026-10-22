@@ -15,7 +15,7 @@ import {
 import { encodeCard } from './idcard.js';
 import { DriveArt } from './drive-art.js';
 import { SimStation, SimDrive, SimCoreDrive } from './sim-station.js';
-import { WebSerialTransport, webSerialSupported } from './serial.js';
+import { WebSerialTransport, webSerialSupported, grantedPorts, onPlugged } from './serial.js';
 import { Library, MemoryStore, resolveRoutine } from './library.js';
 
 const LAST_KEY = 'flash-station:lastDrive';
@@ -258,7 +258,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     fs.station = null;
     fs.socket = null;
     st.close().catch(() => {});
-    $('fsStatus').textContent = 'The station was disconnected (unplugged, or restarting after new firmware). Plug it in, then Choose the station again.';
+    $('fsStatus').textContent = 'The station was disconnected (unplugged, or restarting after new firmware). Plug it back in and it connects by itself.';
     log('Station disconnected');
     refresh();
   }
@@ -374,6 +374,34 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       log(`Station: ${e.message}`);
     }
   });
+
+  // Chrome remembers the station once it has been chosen, so after the first time the page
+  // connects by itself: when the page opens, and whenever the box is plugged back in (also
+  // after new station firmware, when the box restarts).
+  let connecting = false;
+  async function autoConnect(port, how) {
+    if (fs.station || fs.busy || connecting) return;
+    connecting = true;
+    const t = new WebSerialTransport(port);
+    try {
+      await useStation(t, t.describe());
+      log(`Station ${how}`);
+    } catch (e) {
+      $('fsStatus').textContent = `Found the station but couldn't talk to it: ${e.message} If another tab has it open, close that tab, then Choose the station.`;
+      log(`Station: ${e.message}`);
+    } finally {
+      connecting = false;
+    }
+  }
+  onPlugged('station', (port) => autoConnect(port, 'connected by itself'));
+  async function connectRemembered() {
+    try {
+      const [port] = await grantedPorts('station');
+      if (port) await autoConnect(port, 'remembered from last time');
+    } catch (e) {
+      log(`Station: ${e.message}`);
+    }
+  }
 
   $('fsSim').addEventListener('click', async () => {
     try {
@@ -690,5 +718,5 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     setProgress('Stopping after the current send…');
   });
 
-  return { refresh };
+  return { refresh, connectRemembered };
 }

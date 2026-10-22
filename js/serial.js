@@ -5,6 +5,34 @@ export function webSerialSupported() {
   return typeof navigator !== 'undefined' && 'serial' in navigator;
 }
 
+// Which of our boxes a USB serial port is, from its USB vendor ID (the maker's number).
+const FRIEND_VIDS = [0x1a86]; // CH340: the Adafruit UPDI Friend
+const STATION_VIDS = [0x2e8a, 0x2886]; // Raspberry Pi RP2040, Seeed: the XIAO station box
+
+export function portKind(info) {
+  const vid = (info && info.usbVendorId) || 0;
+  if (FRIEND_VIDS.includes(vid)) return 'friend';
+  if (STATION_VIDS.includes(vid)) return 'station';
+  return null;
+}
+
+const kindOf = (port) => portKind(port.getInfo ? port.getInfo() : {});
+
+// Ports Chrome already lets this page use (chosen once, on any earlier visit) that are
+// plugged in now. Opening one needs no click, so the page can connect by itself.
+export async function grantedPorts(kind) {
+  if (!webSerialSupported()) return [];
+  return (await navigator.serial.getPorts()).filter((p) => kindOf(p) === kind);
+}
+
+// Calls fn(port) whenever a port Chrome already lets this page use is plugged in.
+export function onPlugged(kind, fn) {
+  if (!webSerialSupported()) return;
+  navigator.serial.addEventListener('connect', (ev) => {
+    if (kindOf(ev.target) === kind) fn(ev.target);
+  });
+}
+
 export class WebSerialTransport {
   constructor(port) {
     this.port = port;
