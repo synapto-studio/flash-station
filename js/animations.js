@@ -107,16 +107,18 @@ export function heartbeat() {
 // The plug-in pulse (station mode, from the moment the drive goes in until the heartbeats start
 // at 2146 ms): the drive glows at the bootloader's listening level while the box's half of the
 // white pulse spreads out from the socket (the ID flickers inside it at 886 ms: that's engine
-// code, not the recipe), then fades out from the plug up, then the resting glow. Levels as in
-// heartbeat(): the box's 86 -> 148, 60 -> 124. The fade is a fill draining upwards: today each
-// section fades over 310 ms, 120 ms after the one below (firmware pulsetest 1.10 showLevels).
+// code, not the recipe), then fades out from the plug up into the resting glow. Levels as in
+// heartbeat(): the box's 86 -> 148, 60 -> 124. The fade is a fill draining upwards: each section
+// fades over 310 ms, 120 ms after the one below (firmware pulsetest 1.11 showLevels). Since
+// roadmap 8d (station 0.9, pulsetest 2.6) it drains into the resting glow, not to dark: the fill
+// lifts the glow from 124 back up to 148 (124 + 131 x 47 / 255) and drains away.
 export function pluginPulse() {
   return {
     type: 'animation', name: 'Plug-in', board: 'any', timing: 'ms', once: true,
     layers: [
       { move: 'glow', leds: 'all', for: 1230, colour: STATION, level: 148 },
-      { move: 'fill', leds: 'all', at: 1230, for: 550, colour: STATION, level: 148, from: -64, to: 164, edge: 129, curve: 'linear', side: 'above' },
-      { move: 'glow', leds: 'all', at: 1900, for: 250, colour: STATION, level: 124 },
+      { move: 'glow', leds: 'all', at: 1230, colour: STATION, level: 124 },
+      { move: 'fill', leds: 'all', at: 1230, for: 550, colour: STATION, level: 47, from: -64, to: 164, edge: 129, curve: 'linear', side: 'above', blend: 'lift' },
     ],
   };
 }

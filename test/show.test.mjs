@@ -36,7 +36,7 @@ test('settings layout 2 is one 64-byte page and round-trips; layout 1 still read
 test('the show: packs, reads back, and the drive gets exactly that', () => {
   const show = defaultShow();
   const b = packShow(show);
-  assert.equal(b.length, 189, 'today\'s looks: start-up 84, ambient 32, plug-in 20, heartbeat 28 bytes, plus heights and lengths');
+  assert.equal(b.length, 186, 'today\'s looks: start-up 84, ambient 32, plug-in 17, heartbeat 28 bytes, plus heights and lengths');
   const back = unpackShow(b);
   assert.deepEqual(back.heights, show.heights);
   for (const k of ['startup', 'ambient', 'plugin', 'heartbeat']) assert.deepEqual(P.pack(back[k]), P.pack({ ...show[k], board: 'pulse' }), k);
@@ -70,7 +70,7 @@ test('engine 2 image: the show goes in the pages after the routine; the settings
   const show = packShow(defaultShow()), img = new PulseImage(app2(), [2, 5], null, show);
   assert.equal(img.showPage, 203);
   const set = img.settings;
-  assert.deepEqual([set.showPage, set.showLen, set.showCrc], [203, 189, crc16(show)]);
+  assert.deepEqual([set.showPage, set.showLen, set.showCrc], [203, 186, crc16(show)]);
   const pages = img.pages().map(([p]) => p);
   assert.deepEqual(pages.slice(-5), [202, 203, 204, 205, PULSE.TRAILER_PAGE], 'routine, show (3 pages), trailer');
   assert.throws(() => new PulseImage(app2(), [2, 5], null, new Uint8Array(300)), /come to 300 bytes; only 256 fit on the drive after this engine/);
@@ -115,4 +115,8 @@ test('DriveShow on a Flash Station: the plug-in until 2146 ms, then the heartbea
   assert.deepEqual(d.station(500), P.toPixels(P.levels(plugin, 500, ctx)));
   assert.deepEqual(d.station(PLUGIN_MS + 1234), P.toPixels(P.levels(heart, 1234, ctx)));
   assert.equal(d.station(700)[0][0], 85, 'the drive holds the bootloader\'s listening glow (148 squared: 85)');
+  // roadmap 8d (station 0.9, pulsetest 2.6): the pulse fades out from the plug into the resting glow, never dark
+  assert.deepEqual(d.station(1500).map((p) => p[0]), [63, 63, 76, 76, 82, 82, 63, 63], 'fading, the plug end first');
+  for (let t = 1230; t < PLUGIN_MS; t += 10) assert.ok(d.station(t).every((p) => p[0] >= 60), `${t} ms: at or above the resting glow`);
+  assert.deepEqual(d.station(1800), d.station(PLUGIN_MS), 'down to the heartbeat\'s resting glow (124 squared: 60) before it starts');
 });
