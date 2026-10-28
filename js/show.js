@@ -131,7 +131,7 @@ export class DriveShow {
     let beats = 0, prevBeats = 0, ambientBeats = 0, inAmbient = false, pending = null, playing = null, fireMs = 0, momentAt = 0, played = 0;
     for (let i = 0; i < st.n; i++) {
       const now = st.now[i];
-      if (i) beats = (beats + Math.floor(((now - st.now[i - 1]) >>> 0) * 1048576 / run.period[i])) >>> 0;
+      if (i) beats = (beats + A.beatStep(run.barLead[i - 1], run.barLead[i])) >>> 0;
       const music = { bar: run.barLead[i], kick: run.kick[i], loud: run.loud[i] };
       const fired = matcher.pushBlock(st.eKick[i], st.eSnare[i], st.eAll[i], st.ok[i]) || [];
       let t = now - startMs, a = s.startup, next = s.ambient;

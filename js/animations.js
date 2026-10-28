@@ -168,11 +168,16 @@ export function heartbeatToday(ct, heights, plugMs = ct + 2146) {
   });
 }
 
+// How far the beat clock moves on in a block: as far as the bar phase did (1/65536 bars), so it keeps
+// the grid's nudges onto the kicks and can't drift off the music. A step back (the grid moving its
+// downbeat) waits. The engine's pulseBlock (firmware pulsetest) does the same.
+export const beatStep = (prevBar, bar) => { const d = (bar - prevBar) & 65535; return d & 0x8000 ? 0 : d; };
+
 // Today's Pulse look and what the player needs from the same run: per 12.8 ms block, the music
 // clock (bar phase shown early by leadMs, smooth beats), the kick surge and the loudness.
 export function pulseMusic(run, st) {
   const n = st.n, beats = new Float64Array(n);
-  for (let i = 1; i < n; i++) beats[i] = beats[i - 1] + Math.floor((st.now[i] - st.now[i - 1]) * 1048576 / run.period[i]);
+  for (let i = 1; i < n; i++) beats[i] = beats[i - 1] + beatStep(run.barLead[i - 1], run.barLead[i]);
   const at = (ms) => { // the last block at or before ms
     let lo = 0, hi = n - 1;
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (st.now[mid] <= ms) lo = mid; else hi = mid - 1; }
