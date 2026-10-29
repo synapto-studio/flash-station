@@ -298,8 +298,8 @@ export function initLightCues({ $, el, state, tab }) {
   // ---------------------------------------------------------------- controls
   $('cqKeys').replaceChildren(...Object.values(C.KINDS).map((k) =>
     el('span', { class: 'cq-key', 'data-key': k.key, title: `${k.name}: ${k.says}` }, el('kbd', { text: k.key }), ` ${k.name}`)));
-  $('cqRecord').addEventListener('click', () => (mode === 'record' ? stop() : go('record')));
-  $('cqPlay').addEventListener('click', () => (mode === 'play' ? stop() : go('play')));
+  $('cqRecord').addEventListener('click', () => { if (mode === 'record') return stop(); pickSong(); go('record'); });
+  $('cqPlay').addEventListener('click', () => { if (mode === 'play') return stop(); pickSong(); go('play'); });
   $('cqUndo').addEventListener('click', undo);
   $('cqClear').addEventListener('click', () => {
     if (!cues.length) return;
