@@ -143,13 +143,15 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
 
     const es = $('fsEngine');
     const list = engines();
-    const keep = drive && drive.family === prevFamily ? es.value : '';
+    // remember the engine by file name: a file added to the folder can move the others down the list
+    const keep = drive && drive.family === prevFamily ? (selectedEngine() || {}).fileName : null;
     es.replaceChildren();
     if (!list.length) es.append(el('option', { value: '', text: `No ${KIND[(drive || {}).family] || 'pulsetest'} engines yet` }));
     list.forEach((e, i) => es.append(el('option', { value: String(i), text: `${e.label}, from ${e.fileName}` })));
     const d = selectedDrive();
     const match = d && d.engine ? list.findIndex((e) => e.fileName === d.engine.file) : -1;
-    es.value = match >= 0 ? String(match) : list[Number(keep)] ? keep : list.length ? '0' : '';
+    const kept = list.findIndex((e) => e.fileName === keep);
+    es.value = match >= 0 ? String(match) : kept >= 0 ? String(kept) : list.length ? '0' : '';
     refreshRoutines();
     renderHistory();
     renderCard();
@@ -718,5 +720,5 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     setProgress('Stopping after the current send…');
   });
 
-  return { refresh, connectRemembered };
+  return { refresh, connectRemembered, busy: () => fs.busy };
 }

@@ -143,6 +143,33 @@ $('libChip').addEventListener('click', () => {
   else showTab('library');
 });
 $('pickLibBtn').addEventListener('click', chooseLibrary);
+$('rereadLibBtn').addEventListener('click', () => rereadLibrary(true));
+
+// Files copied into the folder (a new engine .hex, say) show up when you come back to the
+// page: the folder stays connected, the app just reads it again. Not while a board is busy.
+let rereading = false;
+async function rereadLibrary(always = false) {
+  const lib = state.library;
+  if (!lib || !lib.saved || rereading) return;
+  if (state.busy || (flashTab && flashTab.busy())) return;
+  rereading = true;
+  try {
+    const before = new Set(state.engines.map((e) => e.fileName));
+    await refreshLibrary();
+    const added = state.engines.filter((e) => !before.has(e.fileName));
+    for (const e of added) log(`New engine in the folder: ${e.fileName} (${e.label})`);
+    if (always && !added.length) log(`Library: read "${lib.name}" again, no new engine files.`);
+  } catch (e) {
+    $('libNote').textContent = `Couldn't read the folder again: ${e.message}. Choose it again with the button above.`;
+    log(`Library: ${e.message}`);
+  } finally {
+    rereading = false;
+  }
+}
+window.addEventListener('focus', () => rereadLibrary());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') rereadLibrary();
+});
 $('addEngineBtn').addEventListener('click', () => $('engineFile').click());
 $('engineFile').addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
@@ -196,8 +223,9 @@ function selectedEngine() {
 
 function refreshEngineOptions() {
   const sel = $('engineSel');
-  const prev = sel.value;
+  const prev = sel.value === '' ? null : (state.shownEngines || [])[Number(sel.value)]; // by file, not place in the list
   const list = enginesForFamily();
+  state.shownEngines = list;
   sel.replaceChildren();
   if (!list.length) {
     sel.append(el('option', { value: '', text: `No ${fam().name} engines yet` }));
@@ -207,7 +235,8 @@ function refreshEngineOptions() {
     list.forEach((e, i) => sel.append(el('option', { value: String(i), text: `${e.label}, from ${e.fileName}` })));
     // prefer a pulsetest file with its bootloader, or a 10 MHz coretest
     const best = list.findIndex((e) => (e.kind === 'pulsetest' && e.hasBootloader) || (e.kind === 'coretest' && e.clock === 10));
-    sel.value = prev && list[Number(prev)] ? prev : String(best >= 0 ? best : 0);
+    const kept = prev ? list.findIndex((e) => e.fileName === prev.fileName && !!e.demo === !!prev.demo) : -1;
+    sel.value = String(kept >= 0 ? kept : best >= 0 ? best : 0);
   }
   refreshRoutineOptions();
 }
