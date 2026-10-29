@@ -12,15 +12,18 @@ const LEN = { 0x48: 36, 0x50: 68, 0x54: 3 }; // H, P, T
 const le16 = (b, i) => b[i] | (b[i + 1] << 8);
 
 // What a drive flickers when it powers up on a station: nothing on today's engines, its ID
-// card (3 copies) on ones that introduce themselves (coretest 1.4, pulsetest 1.1).
+// card (3 copies) on ones that introduce themselves (coretest 1.4, pulsetest 1.1), with its
+// lighting fingerprint on ones that say what lighting they have (tellsLighting: 1.5 on).
 function powerUp(drive) {
-  return drive.announces ? helloAnswer(drive.card, PLUG_COPIES) : new Uint8Array(0);
+  if (!drive.announces) return new Uint8Array(0);
+  return helloAnswer(drive.card, PLUG_COPIES, drive.tellsLighting ? drive.fingerprint() : null);
 }
 
 export class SimDrive {
   constructor(image, card = null) {
     this.card = card;
     this.announces = false;
+    this.tellsLighting = false;
     this.pages = new Map(image.pages().map(([p, d]) => [p, Uint8Array.from(d)]));
     this.valid = true;
     this.buf = [];
@@ -88,6 +91,11 @@ export class SimDrive {
     return crc16(app) === le16(t, 6) && this.codeCrc(t[10]) === le16(t, 8);
   }
 
+  // pulsetest 1.5: the trailer's app CRC, FFFF when an update was cut off.
+  fingerprint() {
+    return this.valid ? le16(this.pages.get(PULSE.TRAILER_PAGE), 6) : 0xffff;
+  }
+
   settings() {
     const i = this.setPage() * PULSE.PAGE;
     return unpackSettings('SOTA.PLS', this.app().subarray(i, i + 64));
@@ -135,12 +143,14 @@ export class SimDrive {
 // bytes from the layout byte on, then their CRC-16) and win over the ones in the flash.
 const CORE_SET_LEN = 98;
 const CORE_MSG_MAX = 1 + CORE_SET_LEN + 2;
+const CORE_HELLO_COPIES_15 = 34;   // coretest 1.5's longer frame: 34 copies in its 3.1 s
 
 export class SimCoreDrive {
   // card: the 32-byte ID card in the user row, or null for a drive without one.
   constructor(settings, card = null) {
     this.card = card;
     this.announces = false;
+    this.tellsLighting = false;
     this.answer = null; // bytes flickered back after the last hello
     this.flash = packSettings('SOTA.LED', settings); // the tagged block in the flashed engine
     this.ee = new Uint8Array(128).fill(0xff); // ATtiny412 EEPROM, erased when initialised
@@ -180,6 +190,11 @@ export class SimCoreDrive {
     return this.eepromValid() ? 'eeprom' : 'flash';
   }
 
+  // coretest 1.5: CRC-16 of the 98 settings bytes in use.
+  fingerprint() {
+    return crc16(this.eepromValid() ? this.ee.subarray(0, CORE_SET_LEN) : this.flash.subarray(8));
+  }
+
   settings() {
     if (!this.eepromValid()) return unpackSettings('SOTA.LED', this.flash);
     return unpackSettings('SOTA.LED', Uint8Array.from([...this.flash.subarray(0, 8), ...this.ee.subarray(0, CORE_SET_LEN)]));
@@ -204,7 +219,7 @@ export class SimCoreDrive {
       this.restarts++;
     } else if (type === 4 && len === 1) {
       this.hellos++;
-      this.answer = helloAnswer(this.card);
+      this.answer = this.tellsLighting ? helloAnswer(this.card, CORE_HELLO_COPIES_15, this.fingerprint()) : helloAnswer(this.card);
     }
   }
 }

@@ -40,6 +40,7 @@ When Jonny describes an animation, follow "Making an animation in a session" in 
 - `js/show.js` Pulse engine 2's show (R5): the recipes and song moments in the pages after the routine, the demo's show, `DriveShow` (what the drive plays, the firmware's twin)
 - `js/cues.js` Light cues (R8): key presses (W white pulse, S shimmer, T stutter, X cut…) to a beat-timed recipe · `js/cues-tab.js` the Light cues screen in the Routines tab
 - `js/lab.js` Animation lab (R3): reads pasted recipes with plain errors, `animations/` files · `js/lab-tab.js` the lab in the Routines tab · `tools/animation-clip.mjs` preview clips
+- `js/lighting.js` the drive's lighting fingerprint (task 7): checked against the register, register corrected; what a Pulse engine 2 plays, named by contents
 - `js/main.js` UI · `js/drive-art.js` the drive drawing
 - `docs/ROADMAP.md` what to build next, in order, with how to check each part
 - `docs/STATION-PROTOCOL.md` the power-line protocol and the XIAO wiring
