@@ -4,7 +4,10 @@
 // drive in the socket for its ID card and picks it in the list, and a drive that introduces
 // itself on plug-in (coretest 1.4, pulsetest 1.1) pops up in the card on its own. With
 // station 0.3 or later nothing is sent to an empty socket, and a drive unplugged mid-send
-// leaves the register as it was.
+// leaves the register as it was. A drive on pulsetest 1.5 or coretest 1.5 also says what
+// lighting it has (its fingerprint): the card checks it against the register and puts the
+// register right when the library knows what the drive has (js/lighting.js). For Pulse engine 2
+// the card and the engine picker say which animations and song moments the engine plays.
 
 import { PulseImage } from './engines.js';
 import {
@@ -17,6 +20,8 @@ import { DriveArt } from './drive-art.js';
 import { SimStation, SimDrive, SimCoreDrive } from './sim-station.js';
 import { WebSerialTransport, webSerialSupported, grantedPorts, onPlugged } from './serial.js';
 import { Library, MemoryStore, resolveRoutine } from './library.js';
+import { checkLighting, correctRegister, lightingText, whatItPlays, playsText } from './lighting.js';
+import { demoMoment } from './demo.js';
 
 const LAST_KEY = 'flash-station:lastDrive';
 const remember = (v) => { try { localStorage.setItem(LAST_KEY, v); } catch {} };
@@ -47,6 +52,15 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     return !!v && Number(v[1]) * 1000 + Number(v[2]) < 1003;
   };
   const selectedEngine = () => engines()[Number($('fsEngine').value)] || null;
+  const simulated = () => !!fs.station && !!fs.station.transport.simulated;
+  // The engine file a drive in the register runs (demo engines included: a demo drive runs one).
+  const engineOf = (d) => {
+    if (!d || !d.engine) return null;
+    const all = [...state.engines, ...state.demo];
+    return all.find((e) => e.fileName === d.engine.file) || all.find((e) => e.label === d.engine.label) || null;
+  };
+  // What an engine plays (Pulse engine 2), named from the library's files by contents.
+  const plays = (e) => whatItPlays(e, { animations: state.animations, moments: state.moments });
   const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, '0');
   // What the box heard when it wasn't a good ID, for the Log: what happened, not a guess.
   const heardText = (bytes) => {
@@ -110,7 +124,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     $('fsTest').textContent = `Link test (about ${core ? '4' : '23'} s)`;
     $('fsSettings').textContent = unplugged ? 'Plug the drive in' : `Send settings (about ${core ? '36' : '15'} s)`;
     $('fsStop').hidden = !fs.busy;
-    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect', 'fsProbe', 'fsSaveRec']) $(id).disabled = fs.busy;
+    for (const id of ['fsDrive', 'fsEngine', 'fsRoutine', 'fsConnect', 'fsSim', 'fsDisconnect', 'fsProbe', 'fsSaveRec', 'fsSimLighting']) $(id).disabled = fs.busy;
     $('fsDisconnect').hidden = !fs.station;
     $('fsProbe').hidden = !fs.station || !canProbe(fs.station.version);
     $('fsSaveRec').hidden = !fs.recordings.length;
@@ -121,8 +135,15 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const why = lim.all || lim.settings || (core ? '' : lim.engine) || '';
     $('fsEngineNote').textContent = why;
     const e = selectedEngine();
+    const p = plays(e);
     if (!why && e) {
-      $('fsEngineNote').textContent = e.demo ? 'A demo engine: only for the simulated station.' : `${e.label}, from ${e.fileName}.`;
+      $('fsEngineNote').textContent = (e.demo ? 'A demo engine: only for the simulated station.' : `${e.label}, from ${e.fileName}.`)
+        + (p ? ' A settings send keeps the animations and song moments below; only a whole engine changes them.' : '');
+    }
+    $('fsEnginePlays').hidden = !p;
+    if (p) {
+      const t = playsText(p);
+      $('fsEnginePlays').replaceChildren(el('dt', { text: 'It plays' }), el('dd', { text: t.anims }), el('dt', { text: 'Song moments' }), el('dd', { text: t.moments }));
     }
   }
 
@@ -178,16 +199,26 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const facts = unknown
       ? [['Board', unknown.board], ['Register', "Not in this library's register. Choose the library folder it was initialised with."]]
       : (() => {
-          const last = d.history && d.history.length ? d.history[d.history.length - 1] : null;
+          const last = (d.history || []).filter((h) => h.action !== 'Lighting checked').pop() || null;
+          // the drive's own word on its lighting, while it's the one in the socket (task 7)
+          const check = fresh && seen.check ? seen.check : null;
+          const known = !check || check.status === 'match' || check.status === 'corrected';
+          const p = known ? plays(engineOf(d)) : null;
+          const t = p ? playsText(p) : null;
           return [
             ['Board', d.board],
             ['Engine', d.engine ? d.engine.label : 'Unknown'],
-            ['Lighting', d.routine || 'Engine defaults'],
+            ['Lighting', check ? lightingText(check) : d.routine || 'Engine defaults', check ? (known ? 'ok' : 'off') : null],
+            ...(t ? [['Animations', t.anims], ['Song moments', t.moments]] : []),
             ['Last send', last ? `${last.action}, ${(last.result || 'Done').toLowerCase()}, ${last.date.slice(0, 10)}` : 'Nothing sent yet'],
             ['Initialised', `${(d.initialised || '').slice(0, 10) || 'Unknown'}${d.casing ? ` · casing ${d.casing}` : ''}`],
           ];
         })();
-    $('fsCardFacts').replaceChildren(...facts.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]));
+    $('fsCardFacts').replaceChildren(...facts.flatMap(([k, v, check]) => {
+      const dd = el('dd', { text: v });
+      if (check) dd.dataset.check = check;
+      return [el('dt', { text: k }), dd];
+    }));
     const family = unknown ? unknown.family : d.family;
     cardArt.setFamily(family === 'core' ? 'core' : 'pulse');
     cardArt.steady(unknown ? null : d.settings);
@@ -203,6 +234,36 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     }
     refresh();
     return found;
+  }
+
+  // The drive said what lighting it has (pulsetest 1.5, coretest 1.5): check it against the
+  // register. When the library knows what it has instead, the register is put right and the
+  // drive's history says so; a match isn't written down (it would be every plug-in).
+  async function checkDrive(drive, fingerprint) {
+    const engines = [...state.engines, ...(simulated() || (engineOf(drive) || {}).demo ? state.demo : [])];
+    let check;
+    try {
+      check = await checkLighting(drive, fingerprint, { engines, routines: state.routines, palettes: state.palettes, library: state.library });
+    } catch (e) {
+      log(`Lighting check: ${e.message}`);
+      return;
+    }
+    if (fs.seen && fs.seen.label === drive.drive) fs.seen.check = check;
+    if (check.status === 'corrected') {
+      const line = correctRegister(drive, check);
+      log(line);
+      const date = new Date().toISOString();
+      drive.history = [...(drive.history || []), { date, station: 'Flash Station', action: 'Lighting checked', engine: drive.engine ? drive.engine.label : '', result: line }];
+      drive.updated = date;
+      try {
+        await state.library.saveDrive(drive);
+      } catch (e) {
+        log(`Couldn't write the drive's history: ${e.message}`);
+      }
+    } else {
+      log(`Lighting: ${lightingText(check)}`);
+    }
+    refresh();
   }
 
   function refreshRoutines() {
@@ -308,13 +369,15 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         said = 'A drive with no ID card was plugged in';
         $('fsFindNote').textContent = 'A drive was plugged in, but it has no ID card. Give it one at the Initialisation Station.';
       } else {
-        // 1.5 drives also say what lighting they have (checking it against the register: roadmap task 7)
+        // 1.5 drives also say what lighting they have: checked against the register below
         const fp = heard.fingerprint == null ? '' : `, lighting fingerprint ${heard.fingerprint.toString(16).toUpperCase().padStart(4, '0')}`;
         said = `Plugged in: ${heard.label} (${heard.board})${fp}`;
         $('fsFindNote').textContent = '';
-        identified(heard, 'plug');
+        const found = identified(heard, 'plug');
+        log(said);
+        if (found && heard.fingerprint != null) await checkDrive(found, heard.fingerprint);
       }
-      log(said);
+      if (!heard || heard.blank) log(said);
       const lv = tellsSocket() ? await logLevels(st) : null;
       if (canTrace(st.version)) await keepRecording(st, { said, heard: bytes, levels: lv });
     }
@@ -408,6 +471,11 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   $('fsSim').addEventListener('click', async () => {
     try {
       if (!state.library) await setLibrary(new Library(new MemoryStore('Demo library (not saved)')));
+      // the demo engine 2's song moment, so the tab can name it
+      if (!state.library.saved && !(await state.library.moments()).length) {
+        await state.library.saveMoment(demoMoment());
+        await refreshLibrary();
+      }
       if (!sendable().some((d) => d.family === 'pulse')) await demoDrive('pulse');
       if (!sendable().some((d) => d.family === 'core')) await demoDrive('core');
       await useStation(new SimStation(null, { version: '0.7' }), 'Simulated station');
@@ -459,7 +527,8 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
 
   // A made-up P-0001 or C-0001 so the simulated station has something to send to.
   async function demoDrive(family) {
-    const e = state.demo.find((x) => x.kind === KIND[family]);
+    // P-0001 on the demo engine 2, so the card shows what it plays
+    const e = state.demo.find((x) => x.kind === KIND[family] && (family !== 'pulse' || x.layout === 2));
     const now = new Date().toISOString();
     const who = family === 'core'
       ? { drive: 'C-0001', board: 'Core A', chip: 'ATtiny412' }
@@ -522,6 +591,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         engine: how.engine ? { label: engine.label, file: engine.fileName, kind: engine.kind } : null,
       });
       event.result = after.result;
+      if (fs.seen && fs.seen.label === drive.drive) fs.seen.check = null;   // the drive's word is from before the send
       if (r.completed) setProgress(`${action}: done. ${how.done}`, 1);
       else if (!r.empty) setProgress(`${action}: stopped. ${how.stopped}`);
       else {
@@ -552,11 +622,12 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
 
   // A simulated Core: its flash holds the settings it was initialised with, its EEPROM the
   // ones sent since (if any), its user row the ID card, as the register says.
-  function simCoreDrive(drive, engine) {
+  // settings: the lighting it really has, if not the register's (the simulated socket's "Lighting on it").
+  function simCoreDrive(drive, engine, settings = null) {
     let card = null;
     try { card = encodeCard({ family: 'C', number: drive.number, board: drive.board }); } catch {}
-    const sim = new SimCoreDrive(drive.flashedSettings || drive.settings || engine.defaults, card);
-    if (drive.flashedSettings && drive.settings) sim.feed(coreSettingsPlan(drive.settings)[0].bytes);
+    const sim = new SimCoreDrive(settings || drive.flashedSettings || drive.settings || engine.defaults, card);
+    if (!settings && drive.flashedSettings && drive.settings) sim.feed(coreSettingsPlan(drive.settings)[0].bytes);
     sim.eeWrites = sim.restarts = sim.heard = 0;
     return sim;
   }
@@ -616,7 +687,10 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (fs.station.transport.simulated) {
         // The simulated socket holds the Core picked in the list, or the first one.
         const d = sendable().find((x) => x.family === 'core' && x.drive === $('fsDrive').value) || sendable().find((x) => x.family === 'core');
-        if (fs.station.transport.drive || !tellsSocket()) fs.station.transport.drive = d ? simCoreDrive(d, state.demo.find((x) => x.kind === 'coretest')) : null;
+        if (fs.station.transport.drive || !tellsSocket()) {
+          fs.station.transport.drive = d ? simCoreDrive(d, state.demo.find((x) => x.kind === 'coretest'), simLighting(d, state.demo.find((x) => x.kind === 'coretest'))) : null;
+          if (d) fs.station.transport.drive.tellsLighting = true;
+        }
       }
       const answer = await fs.station.ask(coreHelloPlan()[0]);
       const heard = answer && parseHello(answer);
@@ -633,6 +707,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       } else {
         found = identified(heard, 'find');
         result = `Found ${heard.label}`;
+        if (found && heard.fingerprint != null) await checkDrive(found, heard.fingerprint);
         if (found) {
           note(`Found ${heard.label} (${heard.board}). It's picked in the list.`);
         } else {
@@ -676,6 +751,19 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
 
+  // The lighting the simulated drive really has: the register's (null), its engine's defaults, or
+  // something no file in the library makes (a brightness nobody saved).
+  function simLighting(d, engine) {
+    const v = $('fsSimLighting').value;
+    if (v === 'defaults') return { ...engine.defaults };
+    if (v === 'other') {
+      const s = { ...(d.settings || engine.defaults) };
+      s.brightness = s.brightness === 201 ? 202 : 201;
+      return s;
+    }
+    return null;
+  }
+
   $('fsPlug').addEventListener('click', () => {
     const v = $('fsSimDrive').value;
     const core = state.demo.find((x) => x.kind === 'coretest');
@@ -683,16 +771,19 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     if (v === OLD || v === STRANGER) {
       sim = new SimCoreDrive(core.defaults, encodeCard({ family: 'C', number: v === OLD ? 1 : 99, board: 'Core A' }));
       sim.announces = v === STRANGER;
+      sim.tellsLighting = v === STRANGER;
     } else {
       const d = sendable().find((x) => x.drive === v);
-      if (d.family === 'core') sim = simCoreDrive(d, core);
+      if (d.family === 'core') sim = simCoreDrive(d, core, simLighting(d, core));
       else {
-        const e = state.demo.find((x) => x.kind === 'pulsetest');
+        // the engine the register says it runs (if the app has that file), as a 1.5 drive
+        const e = engineOf(d) || state.demo.find((x) => x.kind === 'pulsetest');
         let card = null;
         try { card = encodeCard({ family: 'P', number: d.number, board: d.board }); } catch {}
-        sim = new SimDrive(new PulseImage(e.app, e.version, d.settings, e.show), card);
+        sim = new SimDrive(new PulseImage(e.app, e.version, simLighting(d, e) || d.settings, e.show), card);
       }
       sim.announces = true;
+      sim.tellsLighting = true;
     }
     log(`Simulated socket: plugged in ${$('fsSimDrive').selectedOptions[0].text}`);
     fs.station.transport.plugIn(sim);

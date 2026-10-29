@@ -23,6 +23,9 @@ const state = {
   engines: [],
   demo: demoEngines(),
   routines: [],
+  palettes: [],   // colour sets, animations and song moments: the Flash Station tab's lighting check
+  animations: [],
+  moments: [],
   drives: [],
   checked: null,
   busy: false,
@@ -67,6 +70,8 @@ function showTab(name) {
     $(`t-${t}`).setAttribute('aria-selected', String(t === name));
     $(`p-${t}`).hidden = t !== name;
   }
+  // routines, animations and song moments saved in the Routines tab, for the pickers and the drive card
+  if (name === 'station' || name === 'init') rereadLibrary();
 }
 for (const t of TABS) $(`t-${t}`).addEventListener('click', () => showTab(t));
 
@@ -94,6 +99,9 @@ async function refreshLibrary() {
   state.engines = lib ? await lib.engines() : [];
   state.drives = lib ? await lib.drives() : [];
   state.routines = lib ? await lib.routines() : [];
+  state.palettes = lib ? await lib.palettes() : [];
+  state.animations = lib ? await lib.animations('pulse') : [];
+  state.moments = lib ? await lib.moments() : [];
 
   const tb = $('enginesTable').tBodies[0];
   tb.replaceChildren();
@@ -150,7 +158,7 @@ $('rereadLibBtn').addEventListener('click', () => rereadLibrary(true));
 let rereading = false;
 async function rereadLibrary(always = false) {
   const lib = state.library;
-  if (!lib || !lib.saved || rereading) return;
+  if (!lib || rereading) return;
   if (state.busy || (flashTab && flashTab.busy())) return;
   rereading = true;
   try {
