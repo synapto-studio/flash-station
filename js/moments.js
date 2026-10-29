@@ -176,6 +176,95 @@ export function hearClip(prints, audio, rate, room, seed, pre = 1) {
   return listen(prints, stage1(micVolts(audio, rate, room, pre, seed), rate), pre);
 }
 
+/* ---------- the quietest room it still hears (firmware R5c; slow too: a few seconds, in the worker) ---------- */
+// The drive as Jonny's bench Pulse (A2) measured on 28 Oct 2026: its mic hears music ~6 dB quieter
+// than the datasheet's -38 dBV/Pa and rests at 1.35 V (mic check 2), so the 2.1 demo uses the
+// 1.5 V range. With these the model needed what the bench needed (firmware pulsetest/README.md).
+export const BENCH_DRIVE = { micDbv: -44, bias: 1.35 };
+// Levels tried (dB flat: the loud half of the music, where the drive is), loudest first. A level
+// counts when at least half its hearings (4 frame timings x 2 noise seeds) recognise the moment:
+// even loud, a learnt moment is missed now and then at some frame timings (the R5 finding), so
+// "every time" would say more about luck than about the room.
+export const QUIET = { loudest: 100, quietest: 56, step: 2, hearings: 8 };
+const QUIET_HEARINGS = [...Array(QUIET.hearings)].map((_, i) => ({ pre: 1 + (i % 4) * FRAME_SEC / 4, seed: 930 + i }));
+
+// The music in `part` heard at `spl` dB through a home stereo (its 50 Hz roll-off) and the bench
+// drive: how many of the hearings recognise the moment, within 0.5 s of the end of listening.
+function heardAtLevel(pr, part, rate, near, to, spl) {
+  let n = 0;
+  for (const h of QUIET_HEARINGS) {
+    const st = stage1(micVolts(part, rate, 'home', h.pre, h.seed, { ...BENCH_DRIVE, spl }), rate);
+    if (listen([pr], st, h.pre).some((f) => Math.abs(f.t + near - to) < 0.5)) n++;
+  }
+  return n;
+}
+
+// Turns the music down 4 dB at a time from QUIET.loudest until two levels in a row miss it, then
+// tries the 2 dB between. Returns { db (the quietest level heard at least half the time with every
+// louder level tried heard too; null if not even at QUIET.loudest), phoneDb (what a phone's sound
+// meter, dB(A), would read for this music at that level), heard (of hearings, at db), hearings, levels: [{ db, heard }] }.
+export function quietestRoom(audio, rate, print, { from, to }) {
+  const pr = typeof print === 'string' ? unpackPrint(fromHex(print)) : print;
+  const near = Math.max(0, from - 12), part = audio.subarray(Math.floor(near * rate), Math.floor(Math.min(audio.length / rate, to + 3) * rate));
+  const tried = new Map(), heard = (db) => {
+    if (!tried.has(db)) tried.set(db, heardAtLevel(pr, part, rate, near, to, db));
+    return 2 * tried.get(db) >= QUIET.hearings;
+  };
+  let best = null, misses = 0;
+  for (let db = QUIET.loudest; db >= QUIET.quietest && misses < 2; db -= 2 * QUIET.step) {
+    if (heard(db)) { if (!misses) best = db; else break; }
+    else misses++;
+  }
+  if (best !== null && best - QUIET.step >= QUIET.quietest && heard(best - QUIET.step)) best -= QUIET.step;
+  const out = { db: best, phoneDb: null, heard: best === null ? tried.get(QUIET.loudest) : tried.get(best), hearings: QUIET.hearings,
+    levels: [...tried].map(([db, n]) => ({ db, heard: n })).sort((a, b) => b.db - a.db) };
+  if (best !== null) out.phoneDb = Math.round(best + aWeighting(audio.subarray(Math.floor(from * rate), Math.floor(to * rate)), rate));
+  return out;
+}
+
+// dB(A) minus dB flat for this music (after the stereo's 50 Hz roll-off): how much lower a phone's
+// sound meter reads. Drum & bass, mostly bass, reads a few dB lower; a vocal part about the same.
+export function aWeighting(x, rate) {
+  let N = 1;
+  while (N < rate) N *= 2;
+  const ra = (f) => { const f2 = f * f; return 12194 ** 2 * f2 * f2 / ((f2 + 20.6 ** 2) * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2)); };
+  const a1k = ra(1000), wins = [];
+  for (let i = 0; i + N <= x.length; i += N) {
+    const re = Float64Array.from(x.subarray(i, i + N)), im = new Float64Array(N);
+    fft(re, im);
+    let flat = 0, aw = 0;
+    for (let k = 1; k < N / 2; k++) {
+      const f = k * rate / N, p = (re[k] * re[k] + im[k] * im[k]) * f ** 4 / (f ** 4 + 50 ** 4), a = ra(f) / a1k;
+      flat += p; aw += p * a * a;
+    }
+    if (flat > 0) wins.push({ flat, aw });
+  }
+  if (!wins.length) return 0;
+  wins.sort((a, b) => a.flat - b.flat);
+  const loud = wins.slice(Math.floor(wins.length / 2));   // the loud half, as the rooms' levels are measured
+  return 10 * Math.log10(loud.reduce((s, w) => s + w.aw, 0) / loud.reduce((s, w) => s + w.flat, 0));
+}
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let b = n >> 1;
+    for (; j & b; b >>= 1) j ^= b;
+    j ^= b;
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+  }
+  for (let len = 2; len <= n; len *= 2) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const a = i + k, b = a + len / 2, tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+
 // Another clip, the demo track or a crowd: where a moment would fire on it (should be nowhere).
 export function checkOther(moment, audio, rate, room = 'club', seed = 960) {
   return hearClip([momentPrint(moment)], audio, rate, room, seed).map((f) => Math.round(f.t * 1000) / 1000);
@@ -185,7 +274,8 @@ export function checkOther(moment, audio, rate, room = 'club', seed = 960) {
 // { type, name, board, song (its file in songs/), bpm, firstBar, listenFrom, listenTo, playAt,
 //   delayMs and delayBeats (Play at after the end of listening: what the drive waits), animation
 //   (a name in animations/), repeat ("every" or "first"), print (hex: js/songs.js packPrint), kept,
-//   heard (of the 8 simulated rooms), recognisedAt, alsoHeardAt (other places in the song it fires), checkedAgainst }
+//   heard (of the 8 simulated rooms), recognisedAt, alsoHeardAt (other places in the song it fires), checkedAgainst,
+//   quietDb and quietPhoneDb (quietestRoom: null if not worked out, or not heard even at its loudest) }
 const r3 = (x) => Math.round(x * 1000) / 1000;
 export function makeMoment(m) {
   const name = String(m.name == null ? '' : m.name).trim();
@@ -204,6 +294,7 @@ export function makeMoment(m) {
     animation: m.animation, repeat: m.repeat === 'first' ? 'first' : 'every',
     print: m.print, kept: m.kept, heard: m.heard ?? null, recognisedAt: m.recognisedAt == null ? null : r3(m.recognisedAt),
     alsoHeardAt: (m.alsoHeardAt || []).map(r3), checkedAgainst: m.checkedAgainst || [],
+    quietDb: Number.isFinite(m.quietDb) ? m.quietDb : null, quietPhoneDb: Number.isFinite(m.quietPhoneDb) ? m.quietPhoneDb : null,
   };
 }
 export const isMoment = (x) => !!x && x.type === 'song-moment' && typeof x.name === 'string' && typeof x.print === 'string' && Number.isFinite(x.delayMs);
