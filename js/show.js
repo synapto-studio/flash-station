@@ -23,8 +23,24 @@ export const SHOW_ANIMS = ['startup', 'ambient', 'plugin', 'heartbeat'];
 export const MAX_MOMENTS = 8;
 export const PLUGIN_MS = 2146;            // the box's heartbeats start (station/patterns.h)
 // The song moments demo engine (pulsetest 2.1 demo: song moments, no Flash Station plug-in) has
-// room for only these moves (Jonny, 22 Oct 2026).
-export const DEMO_MOVES = ['glow', 'fade', 'breathe', 'drift', 'pulse', 'kick'];
+// room for only these moves, curves and blends, fill only from below, and 4 song moments (Jonny,
+// 22 and 29 Oct 2026; the firmware's own lists: pulsetest/tools/demo_moves.mjs). 4 moments that all
+// match at once take ~24 ms of a 12.8 ms block (the next block waits); 5 would lose a block.
+export const DEMO_MOVES = ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill'];
+export const DEMO_CURVES = ['linear', 'ease', 'in', 'out'];
+export const DEMO_BLENDS = ['over', 'tint', 'lift'];
+export const DEMO_MAX_MOMENTS = 4;
+
+// What recipe r uses that the demo engine hasn't got, in words ("breathe", "the exp curve", ...).
+export function demoMissing(r) {
+  const layers = (r.layers || []).concat(...(r.steps || []).map((x) => x.layers || []));
+  return [...new Set(layers.flatMap((l) => [
+    ...(DEMO_MOVES.includes(l.move) ? [] : [`"${l.move}"`]),
+    ...[l.curve, l.up, l.down].filter((c) => c && !DEMO_CURVES.includes(c)).map((c) => `the ${c} curve`),
+    ...(l.blend && !DEMO_BLENDS.includes(l.blend) ? [`the ${l.blend} blend`] : []),
+    ...(l.move === 'fill' && l.side === 'above' ? ['fill from above'] : []),
+  ]))];
+}
 
 const le16 = (n) => [n & 255, n >> 8];
 const fromHex = (h) => Uint8Array.from(String(h).match(/../g) || [], (x) => parseInt(x, 16));
@@ -32,7 +48,7 @@ const bytesOf = (b) => (typeof b === 'string' ? fromHex(b) : Uint8Array.from(b))
 
 // show: { heights: [8 numbers], startup, ambient, plugin, heartbeat (recipes, or null),
 //         moments: [{ print (bytes or hex), animation (recipe), delayMs, repeat: 'every' | 'first' }] }
-// demo: for the song moments demo engine (only DEMO_MOVES; it has no plug-in or heartbeat).
+// demo: for the song moments demo engine (only what demoMissing() allows, 4 moments; no plug-in or heartbeat).
 export function packShow(show, { demo = false } = {}) {
   const out = [];
   const heights = show.heights;
@@ -43,8 +59,8 @@ export function packShow(show, { demo = false } = {}) {
   const onPulse = (r) => {
     const b = pack({ ...r, board: 'pulse' });
     if (demo) {
-      const bad = (r.layers || []).concat(...(r.steps || []).map((x) => x.layers || [])).map((l) => l.move).find((m) => !DEMO_MOVES.includes(m));
-      if (bad) throw new Error(`"${r.name || 'This animation'}" uses "${bad}", which the song moments demo engine doesn't have room for. The demo plays: ${DEMO_MOVES.join(', ')}.`);
+      const bad = demoMissing(r);
+      if (bad.length) throw new Error(`"${r.name || 'This animation'}" uses ${bad.join(', ')}, which the song moments demo engine doesn't have room for. The demo plays: ${DEMO_MOVES.join(', ')} (fill from below); curves ${DEMO_CURVES.join(', ')}; blends ${DEMO_BLENDS.join(', ')}.`);
     }
     return b;
   };
@@ -52,6 +68,7 @@ export function packShow(show, { demo = false } = {}) {
   if (!show.ambient) throw new Error('A show needs an ambient animation.');
   const moments = show.moments || [];
   if (moments.length > MAX_MOMENTS) throw new Error(`A Pulse can hold ${MAX_MOMENTS} song moments; this show has ${moments.length}.`);
+  if (demo && moments.length > DEMO_MAX_MOMENTS) throw new Error(`The song moments demo engine takes ${DEMO_MAX_MOMENTS} song moments; this show has ${moments.length}.`);
   out.push(moments.length);
   for (const m of moments) {
     if (!(m.delayMs >= 0 && m.delayMs <= 65535)) throw new Error('A song moment\'s delay must be 0 to 65535 ms.');

@@ -11,9 +11,10 @@ import { normalise, pack } from './player.js';
 // One layer each, and one for what's under the cues: a recipe has at most 15.
 export const MAX_CUES = 14;
 export const STEP = 1 / 16;          // the recipe's finest time: 1/16 of a beat
-// Room on the 2.1 demo engine for a second song moment's animation (firmware build of 28 Oct
-// 2026: 212 bytes of the show free, less a moment's print, 96, and its delay and flags, 7).
-export const DEMO_ROOM = 109;
+// Room on the 2.1 demo engine for each of 3 more song moments' animations next to Poison's (firmware
+// build of 29 Oct 2026: 788 bytes of the show free, less 3 x (a moment's print, 96, and its delay
+// and flags, 7), shared by 3). The demo takes 4 moments.
+export const DEMO_ROOM = 159;
 
 // key: what to press. colour: whether the cue has a colour of its own. tap: its length in beats
 // when the key is only tapped (held longer, it lasts as long as the key is held).

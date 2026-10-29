@@ -69,7 +69,7 @@ Packed by `pack()` and read by `unpack()`; the name and board are kept outside t
 
 ## On a Pulse (R5, pulsetest 2.5)
 
-- **Moves:** everything but `hits`, `twinkle` and `flicker` (no room on the ATtiny1614). A Pulse recipe with them gets a plain error; an `any` recipe sent to a Pulse too. The song moments demo engine (2.1) has only glow, fade, breathe, drift, pulse and kick.
+- **Moves:** everything but `hits`, `twinkle` and `flicker` (no room on the ATtiny1614). A Pulse recipe with them gets a plain error; an `any` recipe sent to a Pulse too. The song moments demo engine (2.1) has only glow, fade, drift, pulse, kick and fill (from below), the linear, ease, in and out curves, the over, tint and lift blends, and takes 4 song moments (29 Oct 2026).
 - **The show** (`js/show.js`): what a Pulse engine 2 plays, in the pages after its routine: the 8 LEDs' heights, then the start-up, ambient, plug-in and heartbeat recipes (each 2 bytes of length, then `pack()`'s bytes), then the song moments (flags, delay, print, animation). 2.5 has room for 256 bytes (today's looks: 189).
 - **Times:** beat-timed times go up to 511.9 beats (8191 sixteenths), ms ones to 327.67 s, so every sum the drive works out fits 32 bits. Hits fade by `peak × (255 − fadeTo) × progress / 65025`, progress being the 0–255 through the hit, as every move's.
 
