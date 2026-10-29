@@ -196,3 +196,102 @@ test('custom colours: a bad list gets a plain error', () => {
   bad({ custom: { 6: GREEN }, layers: [{ move: 'glow' }] }, /"custom" is a list of the recipe's own colours in square brackets/);
   bad({ colours: [GREEN], layers: [{ move: 'glow' }] }, /"colours" isn't part of a recipe \(did you mean "custom"\?\)/);
 });
+
+// ---------------------------------------------------------------- R9: over the normal look, recolour, snare
+const RED_TO = [0, 200, 255], ORANGE_TO = [255, 0, 160];
+const OVER = { name: 'Over', board: 'pulse', timing: 'beats', once: true, over: true, custom: [RED_TO, ORANGE_TO, [255, 255, 255]], recolour: { 1: 6, 2: 7 },
+  layers: [{ move: 'fade', leds: [5, 6], for: 2, colour: [8, 8], level: [255, 0], curve: 'out', blend: 'flash' }, { move: 'glow', leds: [1], at: 2, for: 2, colour: 0, level: 0 }] };
+
+test('R9 bytes: "over" is header bit 7, then which colours it recolours and to what; and back', () => {
+  const b = P.pack(OVER);
+  assert.equal(b[0] & 128, 128);
+  assert.deepEqual([...b.slice(1, 1 + 1 + 9)], [3, ...RED_TO, ...ORANGE_TO, 255, 255, 255], 'the custom colours first');
+  assert.deepEqual([...b.slice(11, 14)], [0b0011, 6, 7], 'slots 1 and 2, to 6 and 7');
+  const back = P.unpack(b, { name: 'Over', board: 'pulse' });
+  assert.deepEqual(back, P.normalise(OVER));
+  assert.deepEqual(back.recolour, { 1: 6, 2: 7 });
+  assert.deepEqual(P.pack(back), b);
+  // over without recolour: one 0 byte; recipes without over are as before
+  const plain = { ...OVER, recolour: undefined };
+  assert.equal(P.pack(plain).length, b.length - 2);
+  assert.equal(P.pack(plain)[11], 0);
+  for (const r of RECIPES) assert.equal(P.pack(r)[0] & 128, 0, r.name);
+  // fade's flash blend: bit 5 of its style byte (its other blends and curves as before)
+  const f = (blend) => P.pack({ once: true, layers: [{ move: 'fade', for: 100, blend, curve: 'in' }] });
+  assert.equal(f('flash').at(-1), (1 << 5) | (2 << 2) | 0);
+  assert.equal(f('lift').at(-1), (2 << 2) | 3);
+  assert.equal(P.unpack(f('flash')).layers[0].blend, 'flash');
+});
+
+test('R9 errors: recolour needs over and the recipe\'s own colours; over is for a one-shot', () => {
+  const bad = (r, re) => assert.throws(() => P.pack({ ...OVER, ...r }), re);
+  bad({ over: false }, /"recolour" changes the normal look's colours under the moment, so the recipe needs "over": true/);
+  bad({ once: false }, /"over" is for a song moment \(a one-shot, "once": true\)/);
+  bad({ recolour: { 5: 6 } }, /can change colours 1 to 4 of the colour set/);
+  bad({ recolour: { 1: 2 } }, /turns colour 1 into one of the recipe's own colours \(6 to 15\), not 2/);
+  bad({ recolour: { 1: 9 } }, /uses colour 9, but the recipe's "custom" list has 3 \(colours 6 to 8\)/);
+  bad({ recolour: [6, 7] }, /"recolour" says which of the colour set's colours change/);
+  bad({ over: 'yes' }, /"over" must be true or false/);
+  bad({ recolor: { 1: 6 }, recolour: undefined }, /"recolor" isn't part of a recipe \(did you mean "recolour"\?\)/);
+  bad({ layers: [{ move: 'pulse', every: 1, fall: 0.5, blend: 'flash' }] }, /"blend" must be one of over, mask, tint, lift \(got "flash"\)/);
+  assert.throws(() => P.unpack(Uint8Array.of(128 | 32 | 16 | 1, 0b0001, 6, 0, 1, 0, 255)), /recolours colour 1 to colour 6, which it doesn't have/);
+});
+
+test('over: the normal look keeps playing under the moment, in the moment\'s colours, and comes back after', () => {
+  const drive = P.makeDrive(defaultProfile('pulse')), S = pulse.DEFAULTS;
+  const colours = { red: S.red, orange: S.orange, white: S.white };
+  const ambient = A.pulseAmbient(), BEAT_MS = 60000 / 174;
+  const alone = new P.Show({ sections: [ambient], drive, colours, bpm: 174 });
+  const show = new P.Show({ sections: [OVER], under: ambient, drive, colours, bpm: 174 });
+  const plain = new P.Show({ sections: [{ ...OVER, over: false, recolour: undefined }], drive, colours, bpm: 174 });
+  const at = (sh, beats) => sh.frame(Math.round(beats * BEAT_MS));
+  // beat 1: the top flashes white over the look; the rest is the look, red and orange swapped for the moment's colours
+  const recol = new P.Show({ sections: [ambient], drive, colours: { red: RED_TO, orange: ORANGE_TO, white: S.white }, bpm: 174 });
+  assert.deepEqual(at(show, 1).slice(0, 4), at(recol, 1).slice(0, 4), 'bottom and middle: the normal look in the new colours');
+  assert.ok(at(show, 0.01)[4].every((v) => v > 240), 'top: the white flash');
+  assert.ok(at(show, 1.9)[4][0] < 5 && at(show, 1.9)[4][2] > 100, 'fades back into the look (blue: the new red)');
+  assert.ok(at(plain, 1)[0].every((v) => v === 0), 'not over: dark under the moment');
+  // beat 3: LED 1 cut to dark over the look
+  assert.deepEqual(at(show, 3)[0], [0, 0, 0]);
+  assert.ok(at(show, 3)[1][2] > 0);
+  // after the moment: the normal look in the set's own colours again
+  for (const b of [4.5, 6]) assert.deepEqual(at(show, b), at(alone, b));
+  // before it starts (a lead-in): the normal look
+  assert.deepEqual(show.frame(-500), alone.frame(-500));
+});
+
+test('snare: lifts or flashes on each snare the drive hears, not on the kicks', (t) => {
+  const demo = pulse.synthDnb(8000, { bars: 12 });
+  const st = pulse.stage1(pulse.micVolts(demo.audio, 8000, 'club', 1, 7), 8000);
+  const run = pulse.stage2(st, pulse.DEFAULTS), music = A.pulseMusic(run, st);
+  const drive = P.sectionDrive('pulse');
+  const r = (move, colour = 0) => ({ timing: 'beats', layers: [{ move: 'glow', colour: 1, level: 40 }, { move, loud: 60, colour }] });
+  const lit = (rec) => new P.Show({ sections: [rec], drive, music });
+  const sn = lit(r('snare')), kk = lit(r('kick')), flash = lit(r('snare', 3));
+  const onsets = (arr) => [...arr].map((v, i) => (v ? i : -1)).filter((i) => i >= 0 && st.now[i] - run.startMs > 6000);
+  const snares = onsets(run.sOn), kicks = onsets(run.kOn);
+  t.diagnostic(`the drive heard ${snares.length} snares and ${kicks.length} kicks after 6 s`);
+  assert.ok(snares.length >= 8 && kicks.length >= 8);
+  const ms = (i) => st.now[i] - run.startMs;
+  const top = (sh, i) => sh.levels(ms(i))[0].l;
+  for (const i of snares) {
+    assert.ok(top(sn, i + 1) > 150, `snare at block ${i} lifts (${top(sn, i + 1)})`);
+    assert.ok(flash.levels(ms(i + 1))[0].c[2] > 100, 'a snare with a colour flashes it (white over red)');
+  }
+  for (const i of kicks) {
+    if (snares.some((j) => Math.abs(j - i) < 12)) continue;
+    assert.ok(top(sn, i + 1) <= top(sn, i - 1), `the snare move doesn't rise on the kick at block ${i}`);
+    assert.ok(top(kk, i + 1) > 150 && top(kk, i + 1) > top(kk, i - 1) + 40, 'the kick move lifts on it');
+  }
+  assert.ok(Math.max(...[...run.snare]) >= pulse.DEFAULTS.kickMin, 'the snare surge is as the kick\'s');
+});
+
+test('kick with a colour: move 14 with one more byte; a plain kick as before', () => {
+  const k = (colour) => P.pack({ timing: 'beats', layers: [{ move: 'kick', loud: 80, ...(colour === undefined ? {} : { colour }) }] });
+  assert.deepEqual([...k()], [17, 10, 255, 80]);
+  assert.deepEqual([...k(0)], [...k()]);
+  assert.deepEqual([...k(3)], [17, 14, 255, 80, 3]);
+  assert.equal(P.unpack(k(3)).layers[0].colour, 3);
+  assert.ok(!('colour' in P.unpack(k()).layers[0]));
+  assert.deepEqual([...P.pack({ timing: 'beats', layers: [{ move: 'snare' }] })], [17, 13, 255, 85, 0]);
+});

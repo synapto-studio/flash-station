@@ -7,7 +7,7 @@
 
 import * as pulse from './preview-pulse.js';
 import { Show, makeDrive, length, normalise } from './player.js';
-import { dropExample, pulseMusic } from './animations.js';
+import { dropExample, pulseMusic, pulseAmbient } from './animations.js';
 import { listen } from './songs.js';
 import * as M from './moments.js';
 
@@ -388,7 +388,9 @@ export function initSongMoments({ $, el, state, tab }) {
         out.fire = own;
         out.start = own + (marks.playAt - marks.to);
         const shift = plugMs(out.start) - run.startMs;
-        out.show = new Show({ sections: [anim], drive: makeDrive(tab.profile()), colours: colours(), brightness: S.brightness, music: (ms) => base(ms + shift) });
+        // a moment that plays over the normal look (R9) has today's ambient under it, from when it started
+        const under = anim.over ? pulseAmbient(S) : null, underFrom = run.phaseEnds[6] - shift;
+        out.show = new Show({ sections: [anim], under, underFrom, drive: makeDrive(tab.profile()), colours: colours(), brightness: S.brightness, music: (ms) => base(ms + shift) });
         if (anim.timing === 'ms') out.end = out.start + len / 1000;
         else {
           const b0 = base(shift).beats;
@@ -615,7 +617,8 @@ export function initSongMoments({ $, el, state, tab }) {
     reload: () => reload().catch(() => {}),
     redraw: () => { pv = null; drawAll(); },
     // for Light cues (js/cues-tab.js): the open song, its beats and Play at
-    current: () => (song && grid ? { name: song.name, buffer: song.buffer, duration: song.duration, grid: { ...grid }, playAt: marks ? marks.playAt : null } : null),
+    // (and the clip as the mic model hears it, and the room the preview is in)
+    current: () => (song && grid ? { name: song.name, buffer: song.buffer, audio: song.audio, rate: RATE, duration: song.duration, grid: { ...grid }, playAt: marks ? marks.playAt : null, room: $('smRoom').value, roomName: $('smRoom').selectedOptions[0].textContent.toLowerCase() } : null),
     // pick a saved animation for the moment (after Light cues saves one)
     useAnimation: (name) => reload().then(() => { if (animations().some((a) => a.name === name)) { $('smAnim').value = name; pv = null; drawDrive(); previewNote(); } }).catch(() => {}),
   };

@@ -37,8 +37,10 @@ export function initAnimationLab({ $, el, state, tab }) {
   const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 
   function needsMusic() {
-    return !!read && (read.anim.timing === 'beats' || (then && then.timing === 'beats'));
+    return !!read && (read.anim.timing === 'beats' || (then && then.timing === 'beats') || overPulse());
   }
+  // A song moment that plays over the normal look (R9): the lab draws it over today's ambient.
+  const overPulse = () => !!read && read.anim.over && tab.family() === 'pulse';
   function musicSource() {
     const kind = $('labMusic').value;
     if (kind === 'steady' || (kind === 'clip' && !clip)) return { kind: 'steady', music: null, bpm: bpm(), until: Infinity };
@@ -149,7 +151,8 @@ export function initAnimationLab({ $, el, state, tab }) {
         let src = steady, musicError = null;
         if (needsMusic()) { try { src = musicSource(); } catch (e) { musicError = e.message; } }
         const sections = then ? [read.anim, then] : [read.anim];
-        show = new Show({ sections, drive: makeDrive(tab.profile()), colours: colours(), brightness: brightness(), music: src.music, bpm: src.bpm });
+        const under = overPulse() ? builtInLoop() : null;
+        show = new Show({ sections, under, drive: makeDrive(tab.profile()), colours: colours(), brightness: brightness(), music: src.music, bpm: src.bpm });
         if (then) {
           const onceMs = length(read.anim);
           spanMs = onceMs + toMs(timelineLength(then), then.timing, src, onceMs);
@@ -158,7 +161,7 @@ export function initAnimationLab({ $, el, state, tab }) {
         show.frame(0); // a recipe that can't play fails here, not in the drawing loop
         message('ok', el('strong', { text: 'This recipe works.' }),
           ...read.warnings.map((w) => el('span', { class: 'lab-warn', text: w })));
-        $('labInfo').textContent = `${read.recipe.name || 'Untitled'}. ${describe(read.anim, read.bytes)}${then ? ` Then: ${then.name}.` : ''}`;
+        $('labInfo').textContent = `${read.recipe.name || 'Untitled'}. ${describe(read.anim, read.bytes)}${then ? ` Then: ${then.name}.` : ''}${under ? ` Shown over ${under.name} (built in), as the drive plays it.` : ''}`;
         musicNote(src, musicError);
       } catch (e) {
         show = null;
@@ -179,9 +182,9 @@ export function initAnimationLab({ $, el, state, tab }) {
     $('labBpmWrap').hidden = kind !== 'steady';
     $('labClipWrap').hidden = kind !== 'clip';
     $('labStartWrap').hidden = $('labRoomWrap').hidden = $('labSoundWrap').hidden = kind === 'steady';
-    const kicks = read && read.anim.layers.some((l) => l.move === 'kick');
+    const kicks = read && (read.anim.over || read.anim.layers.some((l) => l.move === 'kick' || l.move === 'snare'));
     let note;
-    if (kind === 'steady') note = `A steady ${bpm()} BPM beat from the start, with no sound.${kicks ? ' Kicks only show with the demo track or a song clip.' : ''}`;
+    if (kind === 'steady') note = `A steady ${bpm()} BPM beat from the start, with no sound.${kicks ? ' Kicks and snares only show with the demo track or a song clip.' : ''}`;
     else if (kind === 'demo') note = `The demo drum and bass track (174 BPM, drums from 0:01.7) from ${fmtTime(startAt())}, heard through the drive's simulated mic in a ${room}.`;
     else if (!clip) note = 'Choose a song clip (.mp3 or .wav). It stays on this computer. Until then the lab uses a steady beat.';
     else note = `${clip.name} from ${fmtTime(startAt())} (it's ${fmtTime(clip.duration)} long), heard through the drive's simulated mic in a ${room}. The clip stays on this computer.`;

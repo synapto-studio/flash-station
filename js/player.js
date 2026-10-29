@@ -12,12 +12,18 @@
 // Colours are slots in the colour set, never "red": 1 red, 2 orange, 3 white, 4 yellow (Core's
 // fourth colour; Pulse uses its orange), 5 the station's warm white, 0 off. A recipe can also
 // carry up to 10 fixed colours of its own, custom: [[r, g, b], ...], which are slots 6 to 15.
+// A song moment can play over the normal look (over: true: the section that was playing keeps
+// going under it) and recolour it while it plays (recolour: { "1": 6 }: the set's red becomes the
+// recipe's own colour 6). kick and snare follow what the drive hears (R9).
 
 const fl = Math.floor;
 
 // ---------------------------------------------------------------- the moves and their numbers
 export const CURVES = ['linear', 'ease', 'in', 'out', 'exp'];
 export const BLENDS = ['over', 'mask', 'tint', 'lift'];
+// fade has one more: flash (mixes what's below towards its colour and raises it towards full, so a
+// flash over the normal look fades back into it). Its bytes: bit 5 of fade's style byte.
+export const FADE_BLENDS = [...BLENDS, 'flash'];
 export const SIDES = ['above', 'below'];
 export const COLOUR_SLOTS = 6; // from the colour set (0-5); the recipe's own colours follow
 export const MAX_CUSTOM = 10;   // slots 6-15: a colour is 4 bits in fade's and drift's bytes
@@ -31,7 +37,7 @@ export const STATION_WHITE = [255, 247, 234]; // the box's LED line white (l, l 
 export const MOVES = {
   glow:    { id: 0, params: [['colour', 'colour', 1], ['level', 'level', 255]] },
   fade:    { id: 1, needsFor: true, params: [['colour', 'colour2', [1, 1]], ['level', 'levels', [0, 255]]],
-             style: [['blend', 2, BLENDS, 'over'], ['curve', 3, CURVES, 'ease']] },
+             style: [['blend', 2, FADE_BLENDS, 'over', 5], ['curve', 3, CURVES, 'ease']] },
   breathe: { id: 2, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['phase', 'time', 0]] },
   drift:   { id: 3, params: [['colours', 'colours'], ['level', 'level', 255], ['every', 'time'], ['phase', 'time', 0]] },
   pulse:   { id: 4, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['rise', 'time', 0], ['fall', 'time'], ['lag', 'lag', 0]],
@@ -44,13 +50,16 @@ export const MOVES = {
   wipe:    { id: 8, needsFor: true, params: [['colour', 'colour', 1], ['level', 'level', 255], ['from', 'pos', 0], ['to', 'pos', 100], ['crest', 'pct', 15], ['behind', 'pct', 40]],
              style: [['curve', 3, CURVES, 'ease']] },
   rainbow: { id: 9, params: [['level', 'level', 255], ['every', 'time'], ['phase', 'time', 0], ['lag', 'lag', 0], ['twist', 'u8', 0]] },
-  kick:    { id: 10, beatsOnly: true, params: [['loud', 'u8', 85]] },
+  // kick and snare: colour 0 lifts what's below on each hit; a colour flashes it (as fade's flash).
+  // A kick with a colour is move 14 in the bytes (loud, colour), so a plain kick's bytes are as before.
+  kick:    { id: 10, beatsOnly: true, colourId: 14, params: [['loud', 'u8', 85]] },
   twinkle: { id: 11, notOnPulse: true, params: [['colour', 'colour', 3], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['chance', 'u8', 64]] },
   flicker: { id: 12, notOnPulse: true, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time']] },
+  snare:   { id: 13, beatsOnly: true, params: [['loud', 'u8', 85], ['colour', 'colour', 0]] },
 };
 // Pulse engine 2 has no room for these three (Jonny, 22 Oct 2026): a recipe for a Pulse can't use them.
 export const PULSE_MOVES = Object.keys(MOVES).filter((m) => !MOVES[m].notOnPulse);
-const MOVE_BY_ID = Object.fromEntries(Object.entries(MOVES).map(([k, m]) => [m.id, k]));
+const MOVE_BY_ID = Object.fromEntries(Object.entries(MOVES).flatMap(([k, m]) => [[m.id, k], ...(m.colourId ? [[m.colourId, k]] : [])]));
 const MAX_LAYERS = 15, MAX_HITS = 40;
 
 // Time units in the bytes: 10 ms, or 1/16 of a beat. Hit lengths: 5 ms, or 1/32 of a beat.
@@ -101,8 +110,8 @@ function didYouMean(word, options, likely = LIKELY) {
   return best ? ` (did you mean "${best}"?)` : '';
 }
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'custom', 'notes', 'layers', 'steps'];
-const RECIPE_LIKELY = { colours: 'custom', colors: 'custom', customcolours: 'custom', customcolors: 'custom', palette: 'custom', rgb: 'custom' };
+export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'over', 'recolour', 'custom', 'notes', 'layers', 'steps'];
+const RECIPE_LIKELY = { colours: 'custom', colors: 'custom', customcolours: 'custom', customcolors: 'custom', palette: 'custom', rgb: 'custom', recolor: 'recolour', ontop: 'over', overlay: 'over' };
 
 // The recipe's own colours: a list of up to 10 [r, g, b], the first is colour 6.
 function normCustom(v) {
@@ -116,6 +125,24 @@ function normCustom(v) {
     }
     return [...c];
   });
+}
+
+// recolour: which of the colour set's slots 1-4 become which of the recipe's own colours while it
+// plays, { "1": 6, "2": 7 } (keys as text, as JSON has them). Needs "over" and the custom colours.
+function normRecolour(v, over, customs) {
+  if (v === undefined) return null;
+  const eg = 'like "recolour": { "1": 6, "2": 7 } (the set\'s red becomes colour 6 and its orange colour 7)';
+  if (!isObj(v)) fail('Recipe', `"recolour" says which of the colour set's colours change, ${eg}.`);
+  if (!over) fail('Recipe', '"recolour" changes the normal look\'s colours under the moment, so the recipe needs "over": true.');
+  const out = {};
+  for (const k of Object.keys(v).sort()) {
+    if (!/^[1-4]$/.test(k)) fail('Recipe', `"recolour" can change colours 1 to 4 of the colour set (1 red, 2 orange, 3 white, 4 yellow), not ${JSON.stringify(k)}: ${eg}.`);
+    const to = v[k];
+    if (!Number.isInteger(to) || to < COLOUR_SLOTS || to >= COLOUR_SLOTS + MAX_CUSTOM) fail('Recipe', `"recolour" turns colour ${k} into one of the recipe's own colours (6 to 15), not ${JSON.stringify(to)}.`);
+    if (to >= COLOUR_SLOTS + customs) fail('Recipe', `"recolour" uses colour ${to}, but the recipe's "custom" list has ${customs ? `${customs} (colour${customs === 1 ? ' 6' : `s 6 to ${COLOUR_SLOTS + customs - 1}`})` : 'none'}. Add it to "custom".`);
+    out[k] = to;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 // The canonical recipe: steps flattened into layers with absolute `at`, every setting filled
@@ -132,6 +159,10 @@ export function normalise(recipe) {
   if (recipe.once !== undefined && typeof recipe.once !== 'boolean') fail('Recipe', '"once" must be true or false.');
   const once = !!recipe.once;
   const custom = normCustom(recipe.custom);
+  if (recipe.over !== undefined && typeof recipe.over !== 'boolean') fail('Recipe', '"over" must be true or false.');
+  const over = !!recipe.over;
+  if (over && !once) fail('Recipe', '"over" is for a song moment (a one-shot, "once": true) drawn over the normal look.');
+  const recolour = normRecolour(recipe.recolour, over, custom.length);
   const list = (v, where, what) => {
     if (v === undefined) return [];
     if (!Array.isArray(v)) fail(where, `"${what}" must be a list in square brackets: [ ... ].`);
@@ -162,6 +193,8 @@ export function normalise(recipe) {
   if (!flat.length) fail('Recipe', 'it has no layers. Add "layers": [ ... ] (or "steps" for a one-shot).');
   if (flat.length > MAX_LAYERS) fail('Recipe', `it has ${flat.length} layers; the most is ${MAX_LAYERS}.`);
   const out = { type: 'animation', name: String(recipe.name || 'Untitled'), board, timing, once, layers: [] };
+  if (over) out.over = true;
+  if (recolour) out.recolour = recolour;
   if (custom.length) out.custom = custom;
   const step = STEP[timing], unit = (q) => +(q * step).toFixed(4);
   let prev = null;
@@ -189,13 +222,14 @@ export function normalise(recipe) {
     c.at = at;
     if (len !== null) c.for = len;
     for (const [name, type, def] of m.params) c[name] = normParam(l[name] === undefined ? def : l[name], type, name, where, timing, custom.length);
+    if (m.colourId && l.colour !== undefined) { const v = normParam(l.colour, 'colour', 'colour', where, timing, custom.length); if (v) c.colour = v; }
     for (const [name, , values, def] of m.style || []) {
       const v = l[name] === undefined ? def : l[name];
       if (values ? !values.includes(v) : typeof v !== 'boolean') fail(where, values ? `"${name}" must be one of ${values.join(', ')} (got ${JSON.stringify(v)}).` : `"${name}" must be true or false.`);
       c[name] = v;
     }
     checkMove(c, where);
-    const known = ['move', 'leds', 'at', ...(m.ownLength ? [] : ['for']), ...m.params.map((p) => p[0]), ...(m.style || []).map((p) => p[0])];
+    const known = ['move', 'leds', 'at', ...(m.ownLength ? [] : ['for']), ...m.params.map((p) => p[0]), ...(m.colourId ? ['colour'] : []), ...(m.style || []).map((p) => p[0])];
     for (const k of Object.keys(l)) if (!known.includes(k)) fail(where, `"${k}" isn't a setting of "${l.move}"${didYouMean(k, known)}. Its settings: ${known.slice(1).join(', ')}.`);
     const dur = m.ownLength ? hitsLength(c.hits) : len;
     prev = { at, end: dur === null ? null : +(at + dur).toFixed(5) };
@@ -306,14 +340,18 @@ const unmask = (m) => [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => m & (1 << (n - 1)))
 
 export function pack(recipe) {
   const a = normalise(recipe), step = STEP[a.timing], hs = HIT_STEP[a.timing];
-  const out = [a.layers.length | (a.timing === 'beats' ? 16 : 0) | (a.once ? 32 : 0) | (a.custom ? 64 : 0)];
+  const out = [a.layers.length | (a.timing === 'beats' ? 16 : 0) | (a.once ? 32 : 0) | (a.custom ? 64 : 0) | (a.over ? 128 : 0)];
   if (a.custom) { out.push(a.custom.length); for (const c of a.custom) out.push(...c); }
+  if (a.over) {
+    const re = a.recolour || {}, slots = [1, 2, 3, 4].filter((k) => re[k]);
+    out.push(slots.reduce((s, k) => s | (1 << (k - 1)), 0), ...slots.map((k) => re[k]));
+  }
   const times = layerTimes(a);
   a.layers.forEach((l, i) => {
     const m = MOVES[l.move], prev = times[i - 1];
     const startMode = l.at === 0 ? 0 : prev && prev.end !== null && Math.abs(l.at - prev.end) < 1e-9 ? 1 : prev && Math.abs(l.at - prev.at) < 1e-9 ? 2 : 3;
-    const same = i > 0 && mask(l.leds) === mask(a.layers[i - 1].leds);
-    out.push(m.id | (startMode << 4) | (l.for ? 64 : 0) | (same ? 128 : 0));
+    const same = i > 0 && mask(l.leds) === mask(a.layers[i - 1].leds), coloured = m.colourId && l.colour;
+    out.push((coloured ? m.colourId : m.id) | (startMode << 4) | (l.for ? 64 : 0) | (same ? 128 : 0));
     if (!same) out.push(mask(l.leds));
     if (startMode === 3) putTime(out, Math.round(l.at / step));
     if (l.for) putTime(out, Math.round(l.for / step));
@@ -328,9 +366,15 @@ export function pack(recipe) {
       else if (type === 'pos') out.push((v / 2) & 255);
       else if (type === 'hits') { out.push(v.length); for (const h of v) out.push(Math.round(h[0] / hs), Math.round(h[1] / hs), h[2]); }
     }
+    if (coloured) out.push(l.colour);
     if (m.style) {
       let s = 0, shift = 0;
-      for (const [name, bits, values] of m.style) { s |= (values ? values.indexOf(l[name]) : l[name] ? 1 : 0) << shift; shift += bits; }
+      for (const [name, bits, values, , hi] of m.style) {
+        const v = values ? values.indexOf(l[name]) : l[name] ? 1 : 0;
+        s |= (v & ((1 << bits) - 1)) << shift;
+        if (hi !== undefined) s |= (v >> bits) << hi; // a value past what its bits hold (fade's flash)
+        shift += bits;
+      }
       out.push(s);
     }
   });
@@ -343,9 +387,9 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
   const need = (n) => { if (p.i + n > b.length) throw new RecipeError('The animation bytes stop part way through.'); };
   need(1);
   const h = b[p.i++], count = h & 15, timing = h & 16 ? 'beats' : 'ms', once = !!(h & 32);
-  if (h & 128) throw new RecipeError('The animation\'s first byte has bit 7 set, which no recipe uses.');
   const step = STEP[timing], hs = HIT_STEP[timing], unit = (q) => +(q * step).toFixed(4);
   const anim = { type: 'animation', name, board, timing, once, layers: [] };
+  if (h & 128) anim.over = true;
   if (h & 64) {
     need(1);
     const n = b[p.i++];
@@ -353,6 +397,19 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
     need(n * 3);
     anim.custom = [];
     for (let k = 0; k < n; k++, p.i += 3) anim.custom.push([b[p.i], b[p.i + 1], b[p.i + 2]]);
+  }
+  if (h & 128) {
+    need(1);
+    const which = b[p.i++];
+    if (which > 15) throw new RecipeError('The animation\'s recolour byte names colours past 4.');
+    const re = {};
+    for (const k of [1, 2, 3, 4]) if (which & (1 << (k - 1))) { need(1); re[k] = b[p.i++]; }
+    if (Object.keys(re).length) anim.recolour = re;
+  }
+  if (anim.over) {
+    const own = anim.custom ? anim.custom.length : 0;
+    for (const [k, v] of Object.entries(anim.recolour || {})) if (v < COLOUR_SLOTS || v >= COLOUR_SLOTS + own) throw new RecipeError(`The animation recolours colour ${k} to colour ${v}, which it doesn't have.`);
+    if (!once) throw new RecipeError('The animation says it plays over the normal look but isn\'t a one-shot.');
   }
   let leds = null, prev = null;
   for (let k = 0; k < count; k++) {
@@ -385,10 +442,18 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
         for (let j = 0; j < n; j++, p.i += 3) ordered[name].push([+(b[p.i] * hs).toFixed(5), +(b[p.i + 1] * hs).toFixed(5), b[p.i + 2]]);
       }
     }
+    if ((x & 15) === m.colourId) { need(1); ordered.colour = b[p.i++]; }
     if (m.style) {
       need(1);
-      let s = b[p.i++];
-      for (const [name, bits, values] of m.style) { const v = s & ((1 << bits) - 1); s >>= bits; ordered[name] = values ? values[v] : !!v; }
+      const s0 = b[p.i++];
+      let s = s0;
+      for (const [name, bits, values, , hi] of m.style) {
+        let v = s & ((1 << bits) - 1);
+        s >>= bits;
+        if (hi !== undefined) v |= ((s0 >> hi) & 1) << bits;
+        if (values && values[v] === undefined) throw new RecipeError(`Layer ${k + 1} (${move}) has an unknown ${name} number ${v}.`);
+        ordered[name] = values ? values[v] : !!v;
+      }
     }
     const dur = m.ownLength ? hitsLength(ordered.hits) : (ordered.for || null);
     prev = { at: ordered.at, end: dur === null ? null : +(ordered.at + dur).toFixed(5) };
@@ -536,9 +601,9 @@ function moveAt(q, t, i, ctx) {
       const hue = ((tt <= 0 ? 0 : fl((tt + q.phase) * 256 / q.every)) + ctx.drive.ranks[i] * q.twist) & 255;
       return [wheel(hue), q.level];
     }
-    case 'kick': {
+    case 'kick': case 'snare': {
       const g = clamp(Math.trunc((ctx.music.loud - (q.loud - 3) * 16) * 255 / 48));
-      return [null, fl(ctx.music.kick * g / 255)];
+      return [q.colour ? pal[q.colour] : null, fl((ctx.music[q.move] || 0) * g / 255)];
     }
     case 'twinkle': {
       const slot = fl(t / q.every), f = prog(t - slot * q.every, q.every);
@@ -571,11 +636,12 @@ function wipeAt(q, t, i, ctx) {
 }
 
 // Every LED's colour and level (0-255) at time t into the animation: whole ms, or for beat-timed
-// ones 1/65536 bars since it started. ctx: { drive, palette, music: { bar, kick, loud }, next }.
+// ones 1/65536 bars since it started. ctx: { drive, palette, music: { bar, kick, snare, loud }, next,
+// under (what's drawn first, each LED's { c, l }: the normal look under a moment that plays over it) }.
 export function levels(anim, t, ctx) {
   const prep = prepare(anim), n = ctx.drive.count;
   if (anim.custom) ctx = { ...ctx, palette: ctx.palette.slice(0, COLOUR_SLOTS).concat(anim.custom) };
-  const out = Array.from({ length: n }, () => ({ c: [0, 0, 0], l: 0 }));
+  const out = ctx.under ? ctx.under.map((x) => ({ c: [...x.c], l: x.l })) : Array.from({ length: n }, () => ({ c: [0, 0, 0], l: 0 }));
   if (t < 0) return out;
   if (!anim.once && prep.length !== null) t %= prep.length;
   for (const q of prep.layers) {
@@ -586,14 +652,33 @@ export function levels(anim, t, ctx) {
       const cur = out[i];
       if (q.move === 'wipe') { out[i] = wipeAt(q, lt, i, ctx); continue; }
       const [c, v] = moveAt(q, lt, i, ctx);
-      const blend = q.move === 'kick' ? 'lift' : q.blend;
+      const blend = q.move === 'kick' || q.move === 'snare' ? (c ? 'flash' : 'lift') : q.blend;
       if (blend === 'over') { cur.c = c; cur.l = v; }
       else if (blend === 'mask') cur.l = fl(cur.l * v / 255);
       else if (blend === 'tint') cur.c = mix(cur.c, c, v);
       else if (blend === 'lift') cur.l += fl((255 - cur.l) * v / 255);
+      else if (blend === 'flash') { cur.c = mix(cur.c, c, v); cur.l += fl((255 - cur.l) * v / 255); }
     }
   }
   return out;
+}
+
+// The colour set while a moment that recolours plays: its slots 1-4 swapped for the moment's own
+// colours (recolour: { "1": 6 } makes red the moment's colour 6). Everything drawn then uses it.
+export function recoloured(pal, anim) {
+  if (!anim.recolour) return pal;
+  const out = pal.slice();
+  for (const [k, v] of Object.entries(anim.recolour)) out[k] = anim.custom[v - COLOUR_SLOTS];
+  return out;
+}
+
+// A song moment that plays over the normal look (its "over"): the section that was playing at its
+// own time st, in the moment's colours, then the moment's layers at mt on top. Before and after
+// the moment, the section as it is.
+export function levelsOver(moment, mt, section, st, ctx) {
+  if (mt < 0 || mt >= prepare(moment).length) return levels(section, st, ctx);
+  const c = { ...ctx, palette: recoloured(ctx.palette, moment) };
+  return levels(moment, mt, { ...c, under: levels(section, st, c) });
 }
 
 // What the LEDs are sent: the level is squared (as both engines do, so dim looks dim), then the
@@ -609,19 +694,22 @@ export function toPixels(lv, brightness = 255) {
 // A steady beat clock when there's no music: bars at `bpm` from time 0.
 export const steadyMusic = (ms, bpm = 174) => {
   const bars = Math.round(ms * bpm * 65536 / 240000);
-  return { bar: bars & 65535, beats: bars, kick: 0, loud: 0 };
+  return { bar: bars & 65535, beats: bars, kick: 0, snare: 0, loud: 0 };
 };
 
 // ---------------------------------------------------------------- a show: sections in order
 // sections: one-shot ms animations (start-up), then the one that keeps playing (ambient).
-// music(ms) gives { bar, beats (1/65536 bars, always growing), kick, loud } at that time; without
-// it beat-timed animations follow a steady 174 BPM. A one-shot's wipe leaves the next section
-// behind it, held at its first frame (beat moves keep time, kicks wait until it's on).
+// music(ms) gives { bar, beats (1/65536 bars, always growing), kick, snare, loud } at that time;
+// without it beat-timed animations follow a steady 174 BPM. A one-shot's wipe leaves the next
+// section behind it, held at its first frame (beat moves keep time, kicks wait until it's on).
+// under: the normal look (a loop) under a section that plays "over" it, as on the drive, started
+// at underFrom ms (it carries on after the moment ends).
 export class Show {
-  constructor({ sections, drive, colours, brightness = 255, music = null, bpm = 174 }) {
+  constructor({ sections, drive, colours, brightness = 255, music = null, bpm = 174, under = null, underFrom = 0 }) {
     this.sections = sections.map((s) => normalise(s));
     this.drive = drive; this.palette = palette(colours); this.brightness = brightness;
     this.music = music || ((ms) => steadyMusic(ms, bpm));
+    this.under = under ? normalise(under) : null; this.underFrom = underFrom;
   }
   // section start times (ms) and which section plays at t
   where(t) {
@@ -641,7 +729,7 @@ export class Show {
     return this.music(t).beats - this.music(start).beats;
   }
   levels(t) {
-    if (t < 0) return levels(this.sections[0], -1, this.ctx());
+    if (t < 0) return this.sections[0].over && this.under ? this.underLevels(t) : levels(this.sections[0], -1, this.ctx());
     const { k, start } = this.where(t);
     const s = this.sections[k], next = this.sections[k + 1];
     const music = this.music(t);
@@ -651,9 +739,12 @@ export class Show {
       let held = null;
       ctx.next = (i) => (held || (held = levels(next, 0, this.ctx({ ...this.music(end), bar: music.bar, kick: 0 }))))[i];
     }
+    if (s.over && this.under) return levelsOver(s, this.localTime(s, t, start), this.under, this.localTime(this.under, t, this.underFrom), ctx);
     return levels(s, this.localTime(s, t, start), ctx);
   }
-  ctx(music = { bar: 0, beats: 0, kick: 0, loud: 0 }) { return { drive: this.drive, palette: this.palette, music }; }
+  // The normal look alone at t (what's under a moment that plays over it).
+  underLevels(t) { return this.under ? levels(this.under, this.localTime(this.under, t, this.underFrom), this.ctx(this.music(t))) : null; }
+  ctx(music = { bar: 0, beats: 0, kick: 0, snare: 0, loud: 0 }) { return { drive: this.drive, palette: this.palette, music }; }
   frame(t) { return toPixels(this.levels(t), this.brightness); }
 }
 

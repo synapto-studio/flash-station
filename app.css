@@ -325,6 +325,18 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px 6px; border: 1px sol
 .cq-list input[type='color']:disabled { opacity: 0.3; }
 .cq-list input[type='range'] { width: 90px; vertical-align: middle; }
 .cq-where { display: block; color: var(--muted); font-size: 13px; }
+.cq-timeline { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; margin-bottom: 4px; }
+.cq-labels { display: flex; flex-direction: column; gap: 4px; }
+.cq-labels span { height: 44px; display: flex; align-items: center; color: var(--muted); font-size: 14px; white-space: nowrap; }
+.cq-labels .cq-hitlabel { height: 34px; display: block; font-size: 12px; line-height: 17px; color: var(--paper); }
+.cq-labels .cq-hitlabel em { font-style: normal; color: var(--resin); }
+.cq-tracks { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.cq-strip { height: 44px; }
+.cq-hits { width: 100%; height: 34px; display: block; border-radius: 6px; background: #121010; border: 1px solid var(--edge); }
+.cq-fold { margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.cq-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--resin); border-radius: 8px; background: color-mix(in srgb, var(--resin) 10%, var(--shell)); }
+.cq-offer span { flex: 1 1 260px; }
+@media (max-width: 520px) { .cq-labels span { font-size: 12px; } }
 @media (max-width: 760px) { .cq-grid { grid-template-columns: 1fr; } }
 .cq-grid input[type='range'], .cq-list input[type='range'] { accent-color: var(--resin); }
 @media (max-width: 640px) {
