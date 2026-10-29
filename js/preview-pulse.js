@@ -238,6 +238,7 @@ const PulseEngine = (function () {
     var kOn = new Uint8Array(n), sOn = new Uint8Array(n), loud = new Int16Array(n), gains = new Uint8Array(n * 3);
     var phase = new Uint16Array(n), bpm = new Float32Array(n), conf = new Uint8Array(n);
     var barLead = new Uint16Array(n), kickOut = new Uint8Array(n), period = new Uint32Array(n); // for the player (js/player.js)
+    var snareOut = new Uint8Array(n), snareLevel = 0; // the snare surge, as the kick's (R9: the player's snare move)
     var kd = newDet(), sd = newDet(), sinceKick2 = 60000;
     var kGap = fl(S.kickGapMs * 100 / BLOCK_MS_X100), sGap = kGap, beatBlocks = fl(2500 * 100 / BLOCK_MS_X100);
     // pulseInit(160): the routine starts its look 160 ms after power-up
@@ -387,6 +388,10 @@ const PulseEngine = (function () {
         var lv = S.kickMin + fl((255 - S.kickMin) * kickHit / 255);
         if ((lv << 8) > kickLevel) kickLevel = lv << 8;
       }
+      if (snareHit) {
+        var lvS = S.kickMin + fl((255 - S.kickMin) * snareHit / 255);
+        if ((lvS << 8) > snareLevel) snareLevel = lvS << 8;
+      }
       var t = (now - startMs) >>> 0, isSteady = t >= pe[6];
       if (isSteady) {
         var inc = fl(((now - lastMs) >>> 0) * 1048576 / ((S.cycleBars ? S.cycleBars : 1) * G.period16));
@@ -407,6 +412,8 @@ const PulseEngine = (function () {
         for (var s4 = 0; s4 < 3; s4++) sl[s4] = (sl[s4] + fl((255 - sl[s4]) * kk * gainOf[s4] / 65025)) & 255;
       }
       kickLevel = (fl(kickLevel * KICK_KEEP / 256)) & 0xFFFF;
+      snareOut[bi] = snareLevel >> 8;
+      snareLevel = (fl(snareLevel * KICK_KEEP / 256)) & 0xFFFF;
       for (var L = 0; L < 8; L++) {
         var look = isSteady ? [sc[SECTION[L]], sl[SECTION[L]]] : startupLook(L, t, sc, sl);
         var c = look[0], level = look[1];
@@ -418,7 +425,7 @@ const PulseEngine = (function () {
       phase[bi] = gridPhase(now); bpm[bi] = 38400000 / G.period16 / 10; conf[bi] = G.conf;
     }
     return { leds: leds, kOn: kOn, sOn: sOn, loud: loud, gains: gains, phase: phase, bpm: bpm, conf: conf, phaseEnds: pe, startMs: startMs,
-             barLead: barLead, kick: kickOut, period: period };
+             barLead: barLead, kick: kickOut, snare: snareOut, period: period };
   }
 
   /* ---------- a drum & bass demo: 174 BPM, kicks on 1 and the "and" of 3, snares on 2 and 4 ---------- */

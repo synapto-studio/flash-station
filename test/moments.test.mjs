@@ -162,3 +162,36 @@ test('the first guess at the moment is the drop', () => {
   assert.ok(Math.abs(findDrop(song.audio, RATE, g) - song.bar(16)) < 0.02);
   assert.equal(findDrop(P.synthDnb(RATE, { bars: 20, breakFrom: 99 }).audio.subarray(RATE * 3), RATE, g), null, 'no breakdown, no drop');
 });
+
+test('R9 on the drive (DriveShow): a moment over the normal look keeps the ambient and its kicks under it, recoloured, and flashes on the snares', async () => {
+  const { demoShow, DriveShow } = await import('../js/show.js');
+  const song = makeSong({ bars: 26, drops: [16] }), g = beatGrid(song.audio, RATE);
+  const L = listenFor(g, snap(g, song.bar(18)), 4), learnt = learnMoment(song.audio, RATE, L);
+  assert.ok(learnt.ok, learnt.problem);
+  const BLUE = [0, 60, 255], GREEN = [0, 255, 90];
+  const anim = { type: 'animation', name: 'Over', board: 'pulse', timing: 'beats', once: true, over: true, custom: [BLUE, GREEN, [255, 255, 255]], recolour: { 1: 6, 2: 7 },
+    layers: [{ move: 'snare', leds: [5, 6], for: 16, loud: 60, colour: 8 }] };
+  const moment = { print: learnt.print, delayMs: 0, repeat: 'first' };
+  const colours = { red: P.DEFAULTS.red, orange: P.DEFAULTS.orange, white: P.DEFAULTS.white };
+  const { st } = hear(song.audio, 'club', 5);
+  const run = (show, c = colours) => new DriveShow(show, { colours: c }).run(st);
+  const withIt = run(demoShow([{ moment, animation: anim }])), without = run(demoShow([]));
+  const recol = run(demoShow([]), { ...colours, red: BLUE, orange: GREEN });
+  assert.equal(withIt.plays.length, 1);
+  const from = withIt.plays[0].block;   // the moment's 16 beats: 5.5 s at 174 BPM, ~430 blocks
+  const px = (r, i, k) => [...r.leds.subarray(i * 24 + k * 3, i * 24 + k * 3 + 3)];
+  const same = (a, b, i, leds) => leds.every((k) => px(a, i, k).every((v, j) => v === px(b, i, k)[j]));
+  const ALL = [0, 1, 2, 3, 4, 5, 6, 7], UNDER = [0, 1, 2, 3, 6, 7];
+  for (let i = 0; i < from; i++) assert.ok(same(withIt, without, i, ALL), `before: block ${i}`);
+  let flashes = 0, i = from;
+  for (; i < from + 400; i++) {
+    assert.ok(same(withIt, recol, i, UNDER), `during: the normal look in the moment's colours, block ${i}`);
+    if (withIt.run.sOn[i]) { flashes++; assert.ok(px(withIt, i + 1, 4)[0] > px(recol, i + 1, 4)[0] + 60, `a white flash on the snare at block ${i}`); }
+  }
+  assert.ok(flashes >= 4, `${flashes} snares`);
+  const end = withIt.leds.length / 24;
+  let back = from + 400;
+  while (back < end && !same(withIt, without, back, ALL)) back++;
+  assert.ok(back > from + 400 && back < from + 460, `the moment ends after its 16 beats (${back - from} blocks)`);
+  for (let k = back; k < end; k++) assert.ok(same(withIt, without, k, ALL), `after: block ${k}`);
+});

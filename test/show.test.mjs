@@ -48,7 +48,7 @@ test('a Pulse can\'t have hits, twinkle or flicker; the demo only its moves, cur
   assert.throws(() => P.normalise(tw), /"twinkle" isn't on a Pulse: there wasn't room for it on the Pulse's chip/);
   assert.throws(() => packShow({ ...defaultShow(), ambient: { ...tw, board: 'any' } }), /isn't on a Pulse/, 'an "any" recipe going to a Pulse too');
   assert.doesNotThrow(() => P.normalise({ ...tw, board: 'any' }), 'still fine for any other board');
-  assert.deepEqual(DEMO_MOVES, ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill']);   // (firmware pulsetest/tools/demo_moves.mjs)
+  assert.deepEqual(DEMO_MOVES, ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill', 'snare']);   // (firmware pulsetest/tools/demo_moves.mjs; snare from R9b)
   assert.throws(() => packShow(defaultShow(), { demo: true }), /"Pulse start-up" uses "wave", "rainbow", the mask blend, fill from above, "wipe", which the song moments demo engine doesn't have room for/);
   assert.doesNotThrow(() => packShow(demoShow(), { demo: true }));
   const one = (l) => ({ type: 'animation', name: 'One', board: 'pulse', timing: 'ms', once: true, layers: [{ leds: 'all', colour: 1, for: 500, ...l }] });

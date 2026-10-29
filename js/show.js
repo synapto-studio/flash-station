@@ -13,7 +13,7 @@
 // DriveShow plays a show the way the engine does (its pulseBlock), for checking the firmware
 // against (firmware pulsetest/tests/engine_equiv.mjs) and for previews.
 
-import { pack, unpack, length, levels, toPixels, palette, makeDrive } from './player.js';
+import { pack, unpack, length, levels, levelsOver, toPixels, palette, makeDrive } from './player.js';
 import * as A from './animations.js';
 import * as pulse from './preview-pulse.js';
 import { defaultProfile } from './profiles.js';
@@ -26,9 +26,11 @@ export const PLUGIN_MS = 2146;            // the box's heartbeats start (station
 // room for only these moves, curves and blends, fill only from below, and 4 song moments (Jonny,
 // 22 and 29 Oct 2026; the firmware's own lists: pulsetest/tools/demo_moves.mjs). 4 moments that all
 // match at once take ~24 ms of a 12.8 ms block (the next block waits); 5 would lose a block.
-export const DEMO_MOVES = ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill'];
+// R9 (app 29 Oct 2026, firmware R9b to come): moments over the normal look, recolour, snare, kick
+// and snare with a colour, and fade's flash blend.
+export const DEMO_MOVES = ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill', 'snare'];
 export const DEMO_CURVES = ['linear', 'ease', 'in', 'out'];
-export const DEMO_BLENDS = ['over', 'tint', 'lift'];
+export const DEMO_BLENDS = ['over', 'tint', 'lift', 'flash'];
 export const DEMO_MAX_MOMENTS = 4;
 
 // What recipe r uses that the demo engine hasn't got, in words ("breathe", "the exp curve", ...).
@@ -131,10 +133,11 @@ export class DriveShow {
     this.palette = palette(colours);
     this.brightness = brightness;
   }
-  frame(anim, t, music, next) {
+  // under: { anim, t } the section a moment that plays over it draws on top of.
+  frame(anim, t, music, next, under = null) {
     const ctx = { drive: this.drive, palette: this.palette, music };
-    if (next) ctx.next = (i) => levels(next, 0, { drive: this.drive, palette: this.palette, music: { ...music, kick: 0 } })[i];
-    return toPixels(levels(anim, t, ctx), this.brightness);
+    if (next) ctx.next = (i) => levels(next, 0, { drive: this.drive, palette: this.palette, music: { ...music, kick: 0, snare: 0 } })[i];
+    return toPixels(under ? levelsOver(anim, t, under.anim, under.t, ctx) : levels(anim, t, ctx), this.brightness);
   }
   // Off a station: the drive's LEDs at every block of a recording. st: preview-pulse stage1 (the
   // mic); S: the engine's settings (the tempo and the detectors: preview-pulse DEFAULTS' names).
@@ -145,11 +148,11 @@ export class DriveShow {
     const run = pulse.stage2(st, S, { startupMs: startLen }), startMs = run.startMs;
     const matcher = new Matcher(s.moments.map((m) => unpackPrint(m.print)));
     const leds = new Uint8Array(st.n * 24), fires = [], plays = [];
-    let beats = 0, prevBeats = 0, ambientBeats = 0, inAmbient = false, pending = null, playing = null, fireMs = 0, momentAt = 0, played = 0;
+    let beats = 0, prevBeats = 0, ambientBeats = 0, inAmbient = false, pending = null, playing = null, fireMs = 0, momentAt = 0, played = 0, under = null;
     for (let i = 0; i < st.n; i++) {
       const now = st.now[i];
       if (i) beats = (beats + Math.floor(((now - st.now[i - 1]) >>> 0) * 1048576 / run.period[i])) >>> 0;
-      const music = { bar: run.barLead[i], kick: run.kick[i], loud: run.loud[i] };
+      const music = { bar: run.barLead[i], kick: run.kick[i], snare: run.snare[i], loud: run.loud[i] };
       const fired = matcher.pushBlock(st.eKick[i], st.eSnare[i], st.eAll[i], st.ok[i]) || [];
       let t = now - startMs, a = s.startup, next = s.ambient;
       if (t >= startLen) {
@@ -168,10 +171,13 @@ export class DriveShow {
         t = isBeats(a) ? (beats - ambientBeats) >>> 0 : t - startLen;
         if (playing !== null) {
           const m = s.moments[playing].animation, mt = ((isBeats(m) ? beats : now) - momentAt) >>> 0;
-          if (mt < fine(m)) { next = a; a = m; t = mt; } else playing = null;
+          if (mt >= fine(m)) playing = null;
+          else if (m.over) { under = { anim: a, t }; a = m; t = mt; }   // the ambient keeps going under it
+          else { next = a; a = m; t = mt; }
         }
       }
-      const px = this.frame(a, t, music, next);
+      const px = this.frame(a, t, music, next, under);
+      under = null;
       for (let k = 0; k < 8; k++) leds.set(px[k], i * 24 + k * 3);
       prevBeats = beats;
     }
@@ -180,7 +186,8 @@ export class DriveShow {
   // On a Flash Station: the drive's LEDs at box time t (ms after it went in).
   station(t) {
     const s = this.show, plug = s.plugin, heart = s.heartbeat;
-    return t < PLUGIN_MS ? this.frame(plug, t, { bar: 0, kick: 0, loud: 0 }, heart) : this.frame(heart, t - PLUGIN_MS, { bar: 0, kick: 0, loud: 0 }, null);
+    const quiet = { bar: 0, kick: 0, snare: 0, loud: 0 };
+    return t < PLUGIN_MS ? this.frame(plug, t, quiet, heart) : this.frame(heart, t - PLUGIN_MS, quiet, null);
   }
 }
 

@@ -169,7 +169,7 @@ export function heartbeatToday(ct, heights, plugMs = ct + 2146) {
 }
 
 // Today's Pulse look and what the player needs from the same run: per 12.8 ms block, the music
-// clock (bar phase shown early by leadMs, smooth beats), the kick surge and the loudness.
+// clock (bar phase shown early by leadMs, smooth beats), the kick and snare surges and the loudness.
 export function pulseMusic(run, st) {
   const n = st.n, beats = new Float64Array(n);
   for (let i = 1; i < n; i++) beats[i] = beats[i - 1] + Math.floor((st.now[i] - st.now[i - 1]) * 1048576 / run.period[i]);
@@ -178,5 +178,5 @@ export function pulseMusic(run, st) {
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (st.now[mid] <= ms) lo = mid; else hi = mid - 1; }
     return lo;
   };
-  return (ms) => { const i = at(ms + run.startMs); return { bar: run.barLead[i], beats: beats[i], kick: run.kick[i], loud: run.loud[i] }; };
+  return (ms) => { const i = at(ms + run.startMs); return { bar: run.barLead[i], beats: beats[i], kick: run.kick[i], snare: run.snare[i], loud: run.loud[i] }; };
 }

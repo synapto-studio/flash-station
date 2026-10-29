@@ -369,12 +369,12 @@
           </div>
         </div>
         <h2 id="cqTitle">Light cues</h2>
-        <p class="note">Make a song moment's animation by playing along. Press Record cues: the song open in Song moments plays from a little before Play at, and each key you press adds a light cue there. Hold a key for as long as the cue should last. Then play it back, change any cue's LEDs, colour and brightness, and save it as the moment's animation.</p>
+        <p class="note">Make a song moment's animation by playing along. Press Record cues: the song open in Song moments plays from a little before Play at, and each key you press adds a light cue there. Hold a key for as long as the cue should last. The cues play over the drive's normal look, so a cut out is a real cut. Then play it back, change any cue's LEDs, colour and brightness, and save it as the moment's animation.</p>
         <p class="note" id="cqCoreNote" hidden>Light cues are for song moments, so they're for Pulse drives. Choose Pulse at the top of the tab.</p>
         <div id="cqBody">
           <p class="note warn" id="cqNoSong" hidden>Open or add a song in Song moments above first. The cues start at its Play at.</p>
           <div class="cq-keys" id="cqKeys" aria-label="The cue keys"></div>
-          <p class="note">Keys <kbd>1</kbd>–<kbd>4</kbd> pick the LEDs for the next cues (all, top, middle, bottom). <kbd>Z</kbd> takes out the last cue, <kbd>Esc</kbd> stops.</p>
+          <p class="note">Keys <kbd>1</kbd>–<kbd>4</kbd> pick the LEDs for the next cues (all, top, middle, bottom). <kbd>Z</kbd> takes out the last cue, <kbd>Esc</kbd> stops. <kbd>K</kbd> and <kbd>N</kbd> follow every kick or snare the drive hears for as long as you hold them: one cue however many hits. Change one to a colour flash in the list.</p>
           <div class="cq-grid">
             <div class="rt-stage sm-stage"><div class="rt-board" id="cqBoard"></div><div class="rt-clock" id="cqClock"></div></div>
             <div>
@@ -398,9 +398,15 @@
                 <label>Brightness <input id="cqLevel" type="range" min="0" max="100" value="100"> <span class="cq-pct" id="cqLevelText">100%</span></label>
               </div>
               <div class="rt-controls">
-                <span>Under the cues:</span>
-                <label>Colour <input id="cqUnder" type="color" value="#ff8a2a"></label>
-                <label>Brightness <input id="cqUnderLevel" type="range" min="0" max="100" value="0"> <span class="cq-pct" id="cqUnderText">0%</span></label>
+                <label>Under the cues <select id="cqUnderMode"><option value="normal" selected>Normal look</option><option value="recolour">Normal look in new colours</option><option value="dark">Dark</option><option value="colour">A colour</option></select></label>
+                <span id="cqUnderColour" hidden>
+                  <label>Colour <input id="cqUnder" type="color" value="#ff8a2a"></label>
+                  <label>Brightness <input id="cqUnderLevel" type="range" min="0" max="100" value="30"> <span class="cq-pct" id="cqUnderText">30%</span></label>
+                </span>
+                <span id="cqUnderNew" hidden>
+                  <label>Its red becomes <input id="cqRe1" type="color" value="#ff0000"></label>
+                  <label>its orange <input id="cqRe2" type="color" value="#ff2d00"></label>
+                </span>
               </div>
               <div class="rt-controls">
                 <button class="btn" id="cqRecord" type="button" disabled>Record cues</button>
@@ -411,7 +417,18 @@
               <div class="lab-msg" id="cqMsg" role="status" aria-live="polite"></div>
             </div>
           </div>
-          <div class="lab-stripwrap"><canvas id="cqStrip" class="rt-strip" aria-label="Colour timeline of the cues"></canvas><div class="lab-head" id="cqHead" hidden></div></div>
+          <div class="cq-timeline" id="cqTimeline" hidden>
+            <div class="cq-labels" aria-hidden="true"><span>Normal look</span><span>Cues</span><span>The drive</span><span class="cq-hitlabel">Kicks<br><em>Snares</em></span></div>
+            <div class="cq-tracks">
+              <canvas id="cqStripLook" class="rt-strip cq-strip" aria-label="Timeline: the drive's normal look under the song"></canvas>
+              <canvas id="cqStrip" class="rt-strip cq-strip" aria-label="Timeline: the cues"></canvas>
+              <canvas id="cqStripDrive" class="rt-strip cq-strip" aria-label="Timeline: what the drive will show"></canvas>
+              <canvas id="cqHits" class="cq-hits" aria-label="The bars, and the kicks and snares the drive hears"></canvas>
+              <div class="lab-head" id="cqHead" hidden></div>
+            </div>
+          </div>
+          <p class="note" id="cqHeard"></p>
+          <div class="cq-fold" id="cqFold" hidden></div>
           <p class="note" id="cqInfo"></p>
           <div class="cq-listwrap"><table class="cq-list" id="cqList"></table></div>
           <div class="rt-controls">

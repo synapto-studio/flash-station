@@ -167,10 +167,11 @@ function timesOf(anim) {
   return out;
 }
 
-// Every colour slot a recipe's layers use.
+// Every colour slot a recipe's layers (and its recolour) use.
 function slotsUsed(anim) {
-  const used = new Set();
+  const used = new Set(Object.values(anim.recolour || {}));
   for (const l of anim.layers) {
+    if (l.colour !== undefined && !Array.isArray(l.colour)) used.add(l.colour); // kick's own colour too
     for (const [name, type] of MOVES[l.move].params) {
       if (type === 'colour') used.add(l[name]);
       else if (type === 'colour2' || type === 'colours') l[name].forEach((c) => used.add(c));
@@ -195,6 +196,7 @@ export function warningsFor(anim) {
     if (huge.length) w.push(`Some times are over 64 bars (${huge.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}). In a beat-timed recipe, times are in beats (4 to a bar), not ms.`);
     if (anim.board === 'core') w.push('Core has no microphone, so it can\'t follow the music. Beat timing is for Pulse.');
   }
+  if (anim.over && anim.board === 'core') w.push('"over" is for a Pulse song moment: a Core has no song moments, so there\'s no normal look for it to play over.');
   return w;
 }
 
@@ -222,7 +224,10 @@ export function describe(anim, bytes) {
   const how = anim.once ? `plays once, ${span(anim, len)}` : len === null ? 'keeps going' : `loops every ${span(anim, len)}`;
   const own = anim.custom ? anim.custom.length : 0;
   const mine = own ? `, ${own} colour${own === 1 ? '' : 's'} of its own (${own === 1 ? 'colour 6' : `colours 6 to ${5 + own}`})` : '';
-  return `${BOARD[anim.board]}, ${anim.timing === 'beats' ? 'follows the beat' : 'timed in ms'}, ${how}. ${n} layer${n === 1 ? '' : 's'}${mine}, ${bytes} bytes on the drive.`;
+  const NAMES = { 1: 'red', 2: 'orange', 3: 'white', 4: 'yellow' };
+  const re = Object.entries(anim.recolour || {}).map(([k, v]) => `${NAMES[k]} becomes colour ${v}`);
+  const over = anim.over ? ` Plays over the normal look${re.length ? ` in new colours (${re.join(', ')})` : ''}.` : '';
+  return `${BOARD[anim.board]}, ${anim.timing === 'beats' ? 'follows the beat' : 'timed in ms'}, ${how}.${over} ${n} layer${n === 1 ? '' : 's'}${mine}, ${bytes} bytes on the drive.`;
 }
 
 // ---------------------------------------------------------------- the lab's timeline
@@ -264,6 +269,8 @@ export function makeAnimation(recipe, name = recipe.name) {
   if (!clean) throw new LabError('Give the animation a name.');
   const anim = normalise({ ...recipe, name: clean });
   const out = { type: 'animation', name: clean, board: anim.board, timing: anim.timing, once: anim.once };
+  if (anim.over) out.over = true;
+  if (anim.recolour) out.recolour = anim.recolour;
   if (recipe.notes !== undefined) out.notes = recipe.notes;
   if (anim.custom) out.custom = anim.custom;
   if (recipe.layers !== undefined) out.layers = recipe.layers;

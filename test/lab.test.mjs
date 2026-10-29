@@ -156,3 +156,29 @@ test('the library saves animations in animations/, lists them by board and refus
   await lib.store.write('animations', 'pulse-broken.json', '{ "type": "animation", "name": "Broken", "layers": [ { "move": "nope" } ] }');
   assert.equal((await lib.animations('pulse')).length, 2);
 });
+
+test('R9: the lab reads, describes and saves a moment over the normal look that recolours it', async () => {
+  const text = `Here it is:
+\`\`\`json
+{ "type": "animation", "name": "Blue drop", "board": "pulse", "timing": "beats", "once": true, "over": true,
+  "recolour": { "1": 6, "2": 7 },
+  "custom": [[0, 60, 255], [140, 0, 255], [255, 255, 255]],
+  "layers": [
+    { "move": "snare", "leds": [5, 6], "for": 16, "loud": 60, "colour": 8 },
+    { "move": "kick", "leds": [1, 2, 7, 8], "for": 16, "loud": 60 },
+    { "move": "fade", "leds": "all", "for": 1, "colour": [8, 8], "level": [255, 0], "blend": "flash" },
+  ]
+}
+\`\`\``;
+  const r = L.readRecipe(text);
+  assert.deepEqual(r.warnings, [], 'colours 6 and 7 are used by the recolour');
+  assert.equal(L.describe(r.anim, r.bytes), `Pulse, follows the beat, plays once, 4 bars. Plays over the normal look in new colours (red becomes colour 6, orange becomes colour 7). 3 layers, 3 colours of its own (colours 6 to 8), ${r.bytes} bytes on the drive.`);
+  const lib = new Library(new MemoryStore());
+  await lib.saveAnimation(r.recipe, 'Blue drop');
+  const back = L.readRecipe(await lib.store.read('animations', 'pulse-blue-drop.json'));
+  assert.deepEqual(back.anim, r.anim);
+  assert.equal(back.bytes, r.bytes);
+  assert.match(L.recipeText(back.recipe), /"over": true, "recolour": \{ "1": 6, "2": 7 \}/);
+  assert.throws(() => L.readRecipe(text.replace('"over": true,', '')), /needs "over": true/);
+  assert.deepEqual(L.readRecipe(text.replace('"pulse"', '"core"').replace(/"leds": \[[^\]]*\]/g, '"leds": "all"')).warnings.filter((w) => /over/.test(w)).length, 1);
+});

@@ -18,6 +18,8 @@ One small **player** plays every animation. An animation is a short **recipe**: 
 | `board` | `core` (6 LEDs), `pulse` (8) or `any` |
 | `timing` | `ms` (times in milliseconds, steps of 10) or `beats` (times in beats, steps of 1/16; a bar is 4 beats) |
 | `once` | `true`: a one-shot (start-up, song moment) that ends when its last timed layer ends, then the next section plays. `false`: loops (a loop with timed layers repeats every time the last one ends) |
+| `over` | Optional, song moments (one-shots) only: `true` draws the moment **over the normal look**: the drive keeps drawing the section that was playing (the ambient, with its kicks) and draws the moment's layers on top. Without it a moment plays over dark (R9) |
+| `recolour` | Optional, needs `over`: `{ "1": 6, "2": 7 }` swaps colour-set slots 1–4 for the recipe's own colours while the moment plays (here the set's red becomes colour 6 and its orange colour 7), for everything drawn: the normal look under it and the moment's own layers. When the moment ends, the normal look has its own colours again |
 | `custom` | Optional: up to 10 colours of the recipe's own, `[[159, 255, 82], ...]` (red, green, blue, 0–255). The first is colour **6**, the next 7, up to 15 (see Colours below) |
 | `layers` | Drawn in order: later layers go over earlier ones |
 | `steps` | For one-shots, instead of (or after) `layers`: `[{ "for": 1200, "layers": [...] }, ...]`. A step's layers start when the step does and last as long as it, unless they give their own `at` (from the step's start) or `for` (may run past the step) |
@@ -34,7 +36,7 @@ One small **player** plays every animation. An animation is a short **recipe**: 
 
 **Curves:** `linear`, `ease` (slow, fast, slow), `in` (starts slow), `out` (starts fast), `exp` (a heartbeat's fade). Rising: `curve(x)`; falling: `255 − curve(x)`.
 
-**Blends** (how a layer goes over the ones before it): `over` (sets colour and level), `mask` (only lets through its level: dims what's below), `tint` (mixes what's below towards its colour, keeps the level), `lift` (raises what's below towards full, keeps the colour).
+**Blends** (how a layer goes over the ones before it): `over` (sets colour and level), `mask` (only lets through its level: dims what's below), `tint` (mixes what's below towards its colour, keeps the level), `lift` (raises what's below towards full, keeps the colour). `fade` has one more, `flash` (tint and lift together by its level: at 255 it's the colour at full, at 0 what's below), so a flash over the normal look fades back into it (R9).
 
 ## The moves
 
@@ -50,7 +52,8 @@ One small **player** plays every animation. An animation is a short **recipe**: 
 | `fill` | colour, level, from, to, edge (20), curve, side (below), blend; needs `for` | A front moves from → to with a soft edge `edge` wide; LEDs on `side` of it are lit. As a `mask` it pours or drains what's below |
 | `wipe` | colour, level, from, to, crest (15), behind (40), curve; needs `for` | A crest of colour sweeps from → to and leaves the **next section** behind it (crossfading over `behind`); dark ahead of it. The next section is held at its first frame (beat moves keep time; kicks wait until it's on) |
 | `rainbow` | level, every, phase, lag, twist (0) | Colour wheel turning once per `every`; `twist` turns each LED at the same height a little further |
-| `kick` | loud (85 dB) | Beats only: lifts towards full on each kick, once the music is at least `loud` dB there (0 at loud − 3 dB, full at loud) |
+| `kick` | loud (85 dB), colour (0) | Beats only: lifts towards full on each kick the drive hears, once the music is at least `loud` dB there (0 at loud − 3 dB, full at loud). With a colour it flashes that colour instead (as fade's `flash` blend) |
+| `snare` | loud (85 dB), colour (0) | As `kick`, on each snare the drive hears (its snare detector; the surge rises and fades as the kick's: `kickMin`, `kickFadeMs`) (R9) |
 | `twinkle` | colour, low, high, every, chance (64) | Each LED, each `every`, sparkles with chance/256 |
 | `flicker` | colour, low, high, every | Each LED eases to a new random level between low and high every `every` |
 
@@ -60,16 +63,17 @@ A "flash" is a `pulse` with a short rise and fall; a "strobe on every beat for 2
 
 Packed by `pack()` and read by `unpack()`; the name and board are kept outside the bytes.
 
-- **Header, 1 byte:** bits 0–3 number of layers (1–15), bit 4 timing in beats, bit 5 one-shot, bit 6 it has custom colours (bit 7 is unused, 0).
+- **Header, 1 byte:** bits 0–3 number of layers (1–15), bit 4 timing in beats, bit 5 one-shot, bit 6 it has custom colours, bit 7 it plays over the normal look (`over`).
 - **Custom colours,** only if bit 6: a count byte (1–10), then 3 bytes (red, green, blue) for each, colour 6 first. A recipe without them has no extra bytes, so today's recipes are unchanged.
-- **Each layer:** 1 byte: bits 0–3 the move's number (table order above: glow 0 … flicker 12), bits 4–5 when it starts (0 at the start, 1 when the layer before ends, 2 with the layer before, 3 at a time given next), bit 6 it has a length, bit 7 same LEDs as the layer before. Then the LED byte (bit 0 = LED 1) unless bit 7, the start time if 3, the length if bit 6, then the move's settings in the order of the table.
+- **Recolour,** only if bit 7 (after the custom colours): 1 byte, bits 0–3 which of slots 1–4 are swapped (0: none), then 1 byte per swapped slot, lowest first: the recipe's own colour it becomes (6–15).
+- **Each layer:** 1 byte: bits 0–3 the move's number (table order above: glow 0 … flicker 12, then snare 13; a `kick` with a colour is 14, and its colour byte follows `loud`, so a plain kick's bytes are as before), bits 4–5 when it starts (0 at the start, 1 when the layer before ends, 2 with the layer before, 3 at a time given next), bit 6 it has a length, bit 7 same LEDs as the layer before. Then the LED byte (bit 0 = LED 1) unless bit 7, the start time if 3, the length if bit 6, then the move's settings in the order of the table.
 - **A time** is 1 byte `0xxxxxxx` (0–127 units) or 2 bytes `1xxxxxxx xxxxxxxx` (up to 32,767 units). Units: 10 ms, or 1/16 beat. `lag` is 1 signed byte of the same units.
 - **Other settings:** colour (a slot, 0–15), level, % width, loud, chance, twist: 1 byte. `fade`'s colours: 1 byte (from in the high 4 bits). `drift`'s colours: 2 bytes, 4 slots of 4 bits, 0 = unused. Levels `[from, to]`: 2 bytes. Positions: 1 signed byte = % / 2. Hits: a count, then on, off (5 ms units), peak.
-- **Style byte** (last, for the moves that have one), from bit 0: `fade` blend (2 bits), curve (3); `pulse` up (3), down (3), blend (2); `wave` curve (3), round, land, back (1 each), blend (2); `fill` curve (3), side (1: 0 above, 1 below), blend (2); `wipe` curve (3). Curves: 0 linear, 1 ease, 2 in, 3 out, 4 exp. Blends: 0 over, 1 mask, 2 tint, 3 lift.
+- **Style byte** (last, for the moves that have one), from bit 0: `fade` blend (2 bits), curve (3), bit 5 set for the `flash` blend (blend bits then 0); `pulse` up (3), down (3), blend (2); `wave` curve (3), round, land, back (1 each), blend (2); `fill` curve (3), side (1: 0 above, 1 below), blend (2); `wipe` curve (3). Curves: 0 linear, 1 ease, 2 in, 3 out, 4 exp. Blends: 0 over, 1 mask, 2 tint, 3 lift.
 
 ## On a Pulse (R5, pulsetest 2.5)
 
-- **Moves:** everything but `hits`, `twinkle` and `flicker` (no room on the ATtiny1614). A Pulse recipe with them gets a plain error; an `any` recipe sent to a Pulse too. The song moments demo engine (2.1) has only glow, fade, drift, pulse, kick and fill (from below), the linear, ease, in and out curves, the over, tint and lift blends, and takes 4 song moments (29 Oct 2026).
+- **Moves:** everything but `hits`, `twinkle` and `flicker` (no room on the ATtiny1614). A Pulse recipe with them gets a plain error; an `any` recipe sent to a Pulse too. The song moments demo engine (2.1) has only glow, fade, drift, pulse, kick and fill (from below), the linear, ease, in and out curves, the over, tint and lift blends, and takes 4 song moments (29 Oct 2026). R9b adds to it: `over` and `recolour`, `snare`, a kick or snare with a colour, and fade's `flash` blend (`js/show.js` `DEMO_*` lists them already; the app doesn't send shows to a drive yet).
 - **The show** (`js/show.js`): what a Pulse engine 2 plays, in the pages after its routine: the 8 LEDs' heights, then the start-up, ambient, plug-in and heartbeat recipes (each 2 bytes of length, then `pack()`'s bytes), then the song moments (flags, delay, print, animation). 2.5 has room for 256 bytes (today's looks: 189).
 - **Times:** beat-timed times go up to 511.9 beats (8191 sixteenths), ms ones to 327.67 s, so every sum the drive works out fits 32 bits. Hits fade by `peak × (255 − fadeTo) × progress / 65025`, progress being the 0–255 through the hit, as every move's.
 
@@ -78,6 +82,8 @@ Packed by `pack()` and read by `unpack()`; the name and board are kept outside t
 - Time inside the player: whole ms, or for beat-timed animations 1/65,536 of a bar (a recipe's 1/16 beat × 1024). The beat clock comes from the drive's tempo grid: the bar's phase (shown `leadMs` early) for locked pulses, and a smooth count of bars since the section started for everything else.
 - `ease(x) = x·x·(765 − 2x) / 65025`; progress through a length is `t × 255 / len`; `mix(a, b, k) = (a(255 − k) + b·k) / 255`; going down, `a − (a − b)·k / 255` (never divide a negative number). The `exp` curve is the 24-entry table in `js/player.js` (exp(−x) in quarters, as the plug-in animation in pulsetest 1.5+).
 - Heights are 0–10,000 from the plug; recipe positions × 100.
+- **Over the normal look (R9):** while a moment with header bit 7 plays, draw the section that was playing first, at its own time (it doesn't stop or restart), then the moment's layers on top of those levels instead of on black (`levelsOver()` in `js/player.js`; `DriveShow` in `js/show.js`). With recolour, both use the colour set with the swapped slots; before and after the moment, the set's own. A wipe's "next section" doesn't apply.
+- **kick and snare** read the music's kick and snare surges (0–255 each block): on a hit, `kickMin + (255 − kickMin) × hit / 255`, kept if higher, fading by the same `KICK_KEEP` every block (`js/preview-pulse.js` stage 2's `kick` and `snare`).
 - Colour slots: 0–5 from the routine's colour set, 6–15 from the playing animation's own custom colours. Each section uses its own: a start-up's colour 6 and the ambient's colour 6 can be different colours.
 - Check against `js/player.js` frame for frame, like `run_equiv.js` does for today's routine.
 
