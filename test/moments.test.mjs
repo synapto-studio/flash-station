@@ -6,7 +6,7 @@ import { crowd, withCrowd } from '../js/songs.js';
 import { Library, MemoryStore } from '../js/library.js';
 import {
   beatGrid, beatSec, snap, earliestPlay, listenChoices, listenFor, fitMarks, barBeat, learnMoment, makeMoment,
-  isMoment, momentFileName, drivePlays, checkOther, findDrop, MARGIN, MUST_HEAR,
+  isMoment, momentFileName, drivePlays, checkOther, findDrop, MARGIN, MUST_HEAR, quietestRoom, aWeighting, QUIET, BENCH_DRIVE,
 } from '../js/moments.js';
 
 const RATE = 8000;
@@ -103,6 +103,36 @@ test('a saved moment, heard through the simulated mic, plays at Play at ±1 beat
     assert.deepEqual(drivePlays([saved], st, pre), [], room);
   }
   assert.deepEqual(checkOther(saved, others[0][0], RATE), [], 'the screen\'s "check other songs" says the same');
+});
+
+test('the quietest room it still hears: the bench Pulse needs ~74 dB of drum & bass, as the firmware\'s sweep says', () => {
+  const song = makeSong({ bars: 26, drops: [16] }), g = beatGrid(song.audio, RATE);
+  const L = listenFor(g, snap(g, song.bar(18)), 4), learnt = learnMoment(song.audio, RATE, L);
+  const q = quietestRoom(song.audio, RATE, learnt.print, L);
+  // firmware pulsetest/tests/quiet_sweep.mjs mic=-44 bias=1.35 (the bench drive): half the time from 71, every time from 74
+  assert.ok(q.db >= 70 && q.db <= 80, `quietest ${q.db} dB: ${JSON.stringify(q.levels)}`);
+  assert.ok(2 * q.heard >= q.hearings);
+  for (const l of q.levels) if (l.db >= q.db) assert.ok(2 * l.heard >= QUIET.hearings, `${l.db} dB louder than ${q.db}, heard ${l.heard}`);
+  assert.ok(q.levels.some((l) => l.db < q.db && 2 * l.heard < QUIET.hearings), 'a quieter level was tried and mostly missed');
+  assert.ok(q.phoneDb < q.db && q.phoneDb > q.db - 15, `a phone reads drum & bass lower: ${q.phoneDb} dB(A) at ${q.db} dB`);
+  // the screen sends only the music around the moment: same answer
+  const near = L.from - 12, part = song.audio.slice(Math.floor(near * RATE), Math.floor((L.to + 3) * RATE));
+  assert.deepEqual(quietestRoom(part, RATE, learnt.print, { from: L.from - near, to: L.to - near }), q);
+  // the default mic (the datasheet's, resting 0.9 V) is untouched by the bench drive's options
+  const v1 = P.micVolts(part, RATE, 'home', 1, 3), v2 = P.micVolts(part, RATE, 'home', 1, 3, { spl: P.ROOMS.home.spl, micDbv: -38, bias: 0.9 });
+  assert.deepEqual(v1, v2);
+  const quiet = P.micVolts(part, RATE, 'home', 1, 3, { ...BENCH_DRIVE, spl: 60 });
+  assert.ok(Math.abs(quiet[0] - BENCH_DRIVE.bias) < 0.01, 'rests at the bench drive\'s 1.35 V');
+  // and the moment file keeps it
+  const m = makeMoment({ name: 'Quiet', song: 's.wav', ...g, listenFrom: L.from, listenTo: L.to, playAt: L.to + 0.1, animation: 'Drop (example)', print: learnt.print, kept: learnt.kept, quietDb: q.db, quietPhoneDb: q.phoneDb });
+  assert.equal(m.quietDb, q.db);
+  assert.equal(makeMoment({ ...m, quietDb: undefined }).quietDb, null);
+});
+
+test('a phone\'s dB(A): 1 kHz reads the same, bass much lower', () => {
+  const r = 16000, tone = (f) => Float32Array.from({ length: r * 4 }, (_, i) => Math.sin(2 * Math.PI * f * i / r));
+  assert.ok(Math.abs(aWeighting(tone(1000), r)) < 0.1);
+  assert.ok(Math.abs(aWeighting(tone(100), r) + 19.1) < 0.6, `100 Hz: ${aWeighting(tone(100), r)}`);
 });
 
 test('a moment the song repeats: found again, and "first time only" plays it once', () => {

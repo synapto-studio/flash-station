@@ -50,18 +50,20 @@ const PulseEngine = (function () {
     }
   }
   // Track -> mic output volts, with `preroll` seconds of room noise first (the drive is plugged
-  // in at time 0; the music starts preroll seconds later).
-  function micVolts(track, sr, room, preroll, seed) {
-    var R = ROOMS[room], pre = fl(preroll * sr), n = pre + track.length;
+  // in at time 0; the music starts preroll seconds later). `drive` (optional) changes the room's
+  // music level (spl, dB flat) and the mic: micDbv (sensitivity, dBV/Pa) and bias (resting volts).
+  function micVolts(track, sr, room, preroll, seed, drive) {
+    drive = drive || {};
+    var R = ROOMS[room], spl = drive.spl == null ? R.spl : drive.spl, pre = fl(preroll * sr), n = pre + track.length;
     var p = new Float32Array(n);
     if (room !== 'silence') p.set(track, pre);
     for (var h = 0; h < R.hp.length; h++) hpInPlace(p, sr, R.hp[h][0], R.hp[h][1]);
-    var gain = room === 'silence' ? 0 : 20e-6 * Math.pow(10, R.spl / 20) / musicRms(p.subarray(pre), sr);
+    var gain = room === 'silence' ? 0 : 20e-6 * Math.pow(10, spl / 20) / musicRms(p.subarray(pre), sr);
     var rnd = mulberry(seed || 7), NT = 8192, tab = new Float32Array(NT), noisePa = 20e-6 * Math.pow(10, 38 / 20);
     for (var q = 0; q < NT; q++) tab[q] = noisePa * gauss(rnd);
     for (var i = 0; i < n; i++) p[i] = p[i] * gain + tab[(i * 2749) & (NT - 1)];
     hpInPlace(p, sr, 50, 0.5);
-    var aop = 20e-6 * Math.pow(10, 122 / 20) * Math.SQRT2, S = Math.pow(10, -38 / 20), bias = 0.9;
+    var aop = 20e-6 * Math.pow(10, 122 / 20) * Math.SQRT2, S = Math.pow(10, (drive.micDbv == null ? -38 : drive.micDbv) / 20), bias = drive.bias == null ? 0.9 : drive.bias;
     for (var k = 0; k < n; k++) {
       var vv = bias + S * aop * Math.tanh(p[k] / aop);
       p[k] = vv < 0 ? 0 : vv > 3.3 ? 3.3 : vv;

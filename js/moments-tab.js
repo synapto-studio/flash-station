@@ -2,7 +2,8 @@
 // into the library's songs/ folder, never uploaded), see its waveform with beats and bars, drag
 // "Listen for" (what the drive learns) and "Play at" (when the animation starts), pick an
 // animation, preview it with the song through the simulated mic, and save it to moments/.
-// The maths is js/moments.js; the slow part (learning) runs in js/moments-worker.js.
+// Under the message: the quietest room the drive still hears the moment in (firmware R5c).
+// The maths is js/moments.js; the slow parts (learning, the quietest room) run in js/moments-worker.js.
 
 import * as pulse from './preview-pulse.js';
 import { Show, makeDrive, length, normalise } from './player.js';
@@ -22,7 +23,7 @@ export function initSongMoments({ $, el, state, tab }) {
   let grid = null;     // { bpm, firstBar }
   let marks = null;    // { from, to, playAt } in s: listening, and when the animation starts
   let bars = M.LISTEN_BARS.start;
-  let learnt = null;   // what learnMoment said, with the marks it was for (key)
+  let learnt = null;   // what learnMoment said, with the marks it was for (key); .quiet: what quietestRoom said ('working' till then)
   let checked = null;  // { key, passed: [names], fired: [{ name, at }] } from "Check against my other songs"
   let view = { from: 0, to: 20 };
   let pv = null;       // the preview: the song heard through the simulated mic around the moment
@@ -36,22 +37,34 @@ export function initSongMoments({ $, el, state, tab }) {
   const learntOk = () => learntNow() && learnt.ok;
 
   // ---------------------------------------------------------------- the worker
-  let worker = null, nextId = 1;
+  let worker = null, quietWorker = null, nextId = 1;
   const jobs = new Map(), here = new Map();
   function runHere(op, d) {
     if (op === 'clip') { here.set(d.clip, d.audio); return true; }
     if (op === 'grid') { const g = M.beatGrid(here.get(d.clip), RATE); return { grid: g, drop: M.findDrop(here.get(d.clip), RATE, g) }; }
     if (op === 'learn') return M.learnMoment(here.get(d.clip), RATE, d.marks);
     if (op === 'check') return M.checkOther(d.moment, d.audio, RATE);
+    if (op === 'quiet') return M.quietestRoom(d.audio, RATE, d.print, d.marks);
   }
-  try {
-    worker = new Worker(new URL('./moments-worker.js', import.meta.url), { type: 'module' });
-    worker.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); e.data.error ? j.rej(new Error(e.data.error)) : j.res(e.data.out); };
-    worker.onerror = () => { worker = null; for (const [id, j] of jobs) { jobs.delete(id); work(j.op, j.d).then(j.res, j.rej); } };
-  } catch { worker = null; }
+  // Two workers: the quietest room takes a few seconds, and learning shouldn't wait for it.
+  const onDone = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); e.data.error ? j.rej(new Error(e.data.error)) : j.res(e.data.out); };
+  function startWorker(quiet) {
+    try {
+      const w = new Worker(new URL('./moments-worker.js', import.meta.url), { type: 'module' });
+      w.onmessage = onDone;
+      w.onerror = () => {
+        if (quiet) quietWorker = null; else worker = null;
+        for (const [id, j] of jobs) if ((j.op === 'quiet') === quiet) { jobs.delete(id); work(j.op, j.d).then(j.res, j.rej); }
+      };
+      return w;
+    } catch { return null; }
+  }
+  worker = startWorker(false);
+  quietWorker = worker && startWorker(true);
   function work(op, d = {}) {
     if (op === 'clip') here.set(d.clip, d.audio);   // kept here too, in case the worker can't start
-    if (worker) return new Promise((res, rej) => { const id = nextId++; jobs.set(id, { res, rej, op, d }); worker.postMessage({ id, op, rate: RATE, ...d }); });
+    const w = op === 'quiet' ? quietWorker : worker;
+    if (w) return new Promise((res, rej) => { const id = nextId++; jobs.set(id, { res, rej, op, d }); w.postMessage({ id, op, rate: RATE, ...d }); });
     return new Promise((res) => setTimeout(res, 20)).then(() => runHere(op, d));
   }
 
@@ -69,7 +82,42 @@ export function initSongMoments({ $, el, state, tab }) {
     if (also.length) parts.push(el('span', { class: 'lab-warn', text: `It also plays at ${also.join(', ')}: the same music comes back there. Choose below whether it plays every time or the first time only.` }));
     if (learnt.moved) parts.push(el('span', { class: 'lab-warn', text: `Play at moved to ${fmt(marks.playAt)}: the drive can't recognise it any sooner.` }));
     message('ok', ...parts);
+    quietLine();
   }
+
+  // ---------------------------------------------------------------- the quietest room it still hears
+  // How loud the music must be where the drive is, for the drive to recognise this moment: the song
+  // turned down 2 dB at a time through the simulated mic of the bench Pulse (firmware R5c).
+  const ROOM_DB = [['a home stereo', pulse.ROOMS.home.spl], ['a bar', pulse.ROOMS.bar.spl], ['a club', pulse.ROOMS.club.spl]];
+  function quietLine() {
+    const b = $('smQuiet');
+    const q = learntOk() ? learnt.quiet : undefined;
+    b.hidden = q === undefined;
+    if (q === undefined) return b.replaceChildren();
+    const head = el('strong', { text: 'Quietest room it still hears: ' });
+    if (q === 'working') return b.replaceChildren(head, 'working it out… The drive hears the moment quieter and quieter, 8 times a level. About 10 seconds.');
+    if (q.error) return b.replaceChildren(head, `couldn't work it out (${q.error}). Move the marks a little to try again.`);
+    if (q.db === null) return b.replaceChildren(head, `louder than ${M.QUIET.loudest} dB. Even that loud the drive missed it more than half the time. Listen for longer, or move listening onto a part with more going on.`);
+    const list = (rs) => rs.map(([n, db]) => `${n} (~${db} dB)`).join(', ').replace(/, ([^,]*)$/, ' and $1');
+    const ok = ROOM_DB.filter(([, db]) => db >= q.db), not = ROOM_DB.filter(([, db]) => db < q.db);
+    const rooms = !not.length ? `${list(ok)} ${ok.length > 1 ? 'are all' : 'is'} loud enough.`
+      : !ok.length ? `Louder than ${list(not)}.`
+      : `${list(ok)} ${ok.length > 1 ? 'are' : 'is'} loud enough; ${list(not)} ${not.length > 1 ? 'aren\'t' : 'isn\'t'}.`;
+    b.replaceChildren(head, el('span', { class: 'sm-quiet-db', text: `${q.db} dB` }),
+      q.phoneDb === null ? '' : ` (a phone's sound meter would show about ${q.phoneDb} dB(A) for this music)`,
+      `. Quieter than that it mostly misses it. ${rooms[0].toUpperCase()}${rooms.slice(1)} `,
+      el('span', { class: 'note', text: 'Simulated for the bench Pulse and the 2.1 demo, with the music measured where the drive is. Not bench-tested yet.' }));
+  }
+  function hearQuiet() {
+    if (!learntOk() || learnt.quiet !== undefined) return;
+    const l = learnt, near = Math.max(0, marks.from - 12), m = { from: marks.from - near, to: marks.to - near };
+    l.quiet = 'working';
+    const audio = song.audio.slice(Math.floor(near * RATE), Math.floor(Math.min(song.duration, marks.to + 3) * RATE));
+    const done = (q) => { l.quiet = q; if (learnt === l) quietLine(); };
+    quietDone = work('quiet', { audio, print: l.print, marks: m }).then(done, (e) => done({ error: e.message }));
+    quietLine();
+  }
+  let quietDone = Promise.resolve();
 
   // ---------------------------------------------------------------- songs
   let actx = null;
@@ -95,6 +143,7 @@ export function initSongMoments({ $, el, state, tab }) {
       bars = Math.round((at.listenTo - at.listenFrom) / beat() / 4) || M.LISTEN_BARS.start;
       marks = { from: at.listenFrom, to: at.listenTo, playAt: at.playAt };
       learnt = { key: keyOf(), ok: true, print: at.print, kept: at.kept, bytes: at.print.length / 2, heard: at.heard ?? M.HEARINGS.length, hearings: M.HEARINGS.length, recognisedAt: at.recognisedAt ?? at.listenTo, alsoHeardAt: at.alsoHeardAt || [] };
+      if (Number.isFinite(at.quietDb)) learnt.quiet = { db: at.quietDb, phoneDb: at.quietPhoneDb ?? null };
       checked = at.checkedAgainst && at.checkedAgainst.length ? { key: keyOf(), passed: at.checkedAgainst, fired: [] } : null;
     } else {
       grid = found.grid;
@@ -149,11 +198,14 @@ export function initSongMoments({ $, el, state, tab }) {
     }
     fields(); status(); drawAll();
   }
+  let learning = '';   // the marks being learnt now
   function learn() {
     const key = keyOf();
-    if (!key || learntNow()) return;
+    if (!key || learntNow() || learning === key) return;
     const m = { from: marks.from, to: marks.to };
+    learning = key;
     pending = work('learn', { clip: song.name, marks: m }).then((r) => {
+      if (learning === key) learning = '';
       if (keyOf() !== key) return;          // the marks moved on: a newer one is learning
       learnt = { key, ...r };
       if (r.ok) {
@@ -162,7 +214,8 @@ export function initSongMoments({ $, el, state, tab }) {
         learnt.moved = marks.playAt > before + 1e-6;
       }
       pv = null; fields(); status(); drawAll();
-    }).catch((e) => { if (keyOf() === key) { learnt = { key, ok: false, problem: `Something went wrong learning it (${e.message}). Move the marks a little to try again.` }; status(); } });
+      hearQuiet();
+    }).catch((e) => { if (learning === key) learning = ''; if (keyOf() === key) { learnt = { key, ok: false, problem: `Something went wrong learning it (${e.message}). Move the marks a little to try again.` }; status(); } });
   }
 
   function fields() {
@@ -501,6 +554,7 @@ export function initSongMoments({ $, el, state, tab }) {
       const moment = M.makeMoment({
         name: $('smName').value, song: song.name, ...grid, listenFrom: marks.from, listenTo: marks.to, playAt: marks.playAt,
         animation: chosen().name, repeat, print: learnt.print, kept: learnt.kept, heard: learnt.heard, recognisedAt: learnt.recognisedAt, alsoHeardAt: learnt.alsoHeardAt,
+        quietDb: learnt.quiet && learnt.quiet.db, quietPhoneDb: learnt.quiet && learnt.quiet.phoneDb,
         checkedAgainst: checked && checked.key === keyOf() ? checked.passed : [],
       });
       const { file, replaced } = await state.library.saveMoment(moment);
@@ -550,6 +604,7 @@ export function initSongMoments({ $, el, state, tab }) {
   window.synaptoMoments = {
     open: (name, bytes) => (pending = openSong(name, bytes, false)),
     settled: async () => { await pending; while (song && marks && !learntNow()) { learn(); await pending; await new Promise((r) => setTimeout(r, 50)); } },
+    quiet: async () => { while (learntOk() && learnt.quiet === 'working') await quietDone; return learntOk() ? learnt.quiet : null; },
     at(t) { stop(); pt = t; drawAll(); },
     state: () => ({ grid, marks, view, learnt: learnt && { ok: learnt.ok, recognisedAt: learnt.recognisedAt, alsoHeardAt: learnt.alsoHeardAt, problem: learnt.problem }, preview: pv && { fire: pv.fire, start: pv.start, end: pv.end } }),
   };
