@@ -93,7 +93,7 @@ test('at most 15 cues (a recipe has 15 layers), 14 over a colour; each cue is ab
   const one = C.build({ cues: [cue('white', 0, 0.5)], drive }).bytes;
   const two = C.build({ cues: [cue('white', 0, 0.5), cue('cut', 1, 0.5)], drive }).bytes;
   assert.ok(two - one >= 4 && two - one <= 13, `a cut costs ${two - one} bytes`);
-  // a typical burst of 8 cues fits on the 2.1 demo, 3 like it next to Poison's moment
+  // a typical burst of 8 cues fits on the 2.1 demo next to Poison's moment
   const burst = C.build({ cues: ['white', 'cut', 'shimmer', 'stutter', 'white', 'fadeUp', 'fadeDown', 'bright'].map((k, i) => cue(k, i, 1)), drive });
   assert.ok(burst.bytes <= C.DEMO_ROOM, `${burst.bytes} bytes`);
 });
