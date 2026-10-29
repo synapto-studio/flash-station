@@ -95,7 +95,7 @@ const PulseEngine = (function () {
     for (var r4 = 0; r4 < 4; r4++) { var a64 = 0; for (var j = 0; j < 64; j++) { a64 += adc10(vAt(tt)); tt += convDt; } sum += a64; }
     var bias = fl(fl(sum / 4) * VDD_MV / 65472);
     var rangeMin = NUM_RANGES - 1, rangeMax = NUM_RANGES - 1, rangeNow;
-    for (var r = 0; r < NUM_RANGES; r++) if (REF_MV[r] >= bias + 200) { rangeMin = r; break; }
+    for (var r = 0; r < NUM_RANGES; r++) if (REF_MV[r] >= bias + 100) { rangeMin = r; break; }   // 0.1 V above the mic (firmware R5c; was 0.2 V)
     for (r = rangeMin; r < NUM_RANGES; r++) if (REF_MV[r] >= 2 * bias) { rangeMax = r; break; }
     rangeNow = rangeMax;
     hwSetRange(rangeNow);
