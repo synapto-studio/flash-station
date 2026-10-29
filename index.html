@@ -361,6 +361,60 @@
             </div>
           </div>
         </div>
+        <h2 id="cqTitle">Light cues</h2>
+        <p class="note">Make a song moment's animation by playing along. Press Record cues: the song open in Song moments plays from a little before Play at, and each key you press adds a light cue there. Hold a key for as long as the cue should last. Then play it back, change any cue's LEDs, colour and brightness, and save it as the moment's animation.</p>
+        <p class="note" id="cqCoreNote" hidden>Light cues are for song moments, so they're for Pulse drives. Choose Pulse at the top of the tab.</p>
+        <div id="cqBody">
+          <p class="note warn" id="cqNoSong">Open or add a song in Song moments above first. The cues start at its Play at.</p>
+          <div class="cq-keys" id="cqKeys" aria-label="The cue keys"></div>
+          <p class="note">Keys <kbd>1</kbd>–<kbd>4</kbd> pick the LEDs for the next cues (all, top, middle, bottom). <kbd>Z</kbd> takes out the last cue, <kbd>Esc</kbd> stops.</p>
+          <div class="cq-grid">
+            <div class="rt-stage sm-stage"><div class="rt-board" id="cqBoard"></div><div class="rt-clock" id="cqClock"></div></div>
+            <div>
+              <div class="rt-controls">
+                <span>Song</span> <strong class="sm-val" id="cqSong">–</strong>
+              </div>
+              <div class="rt-controls">
+                <span>Starts at</span> <strong class="sm-val" id="cqStart">–</strong>
+                <button class="btn quiet" id="cqEarlier" type="button" aria-label="Start a beat earlier">a beat earlier</button>
+                <button class="btn quiet" id="cqLater" type="button" aria-label="Start a beat later">a beat later</button>
+                <button class="btn quiet" id="cqUsePlay" type="button">Use Play at</button>
+              </div>
+              <div class="rt-controls">
+                <label>Lead-in <select id="cqLead"><option value="0">None</option><option value="4">1 bar</option><option value="8" selected>2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></label>
+                <label>Snap to <select id="cqSnap"><option value="0.0625">1/16 beat (finest)</option><option value="0.25" selected>16th note</option><option value="0.5">8th note</option><option value="1">Beat</option></select></label>
+              </div>
+              <div class="rt-controls">
+                <span>New cues:</span>
+                <label>LEDs <select id="cqZone"><option value="all">All</option><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></label>
+                <label>Colour <input id="cqColour" type="color" value="#ff8a2a"></label>
+                <label>Brightness <input id="cqLevel" type="range" min="0" max="100" value="100"> <span class="cq-pct" id="cqLevelText">100%</span></label>
+              </div>
+              <div class="rt-controls">
+                <span>Under the cues:</span>
+                <label>Colour <input id="cqUnder" type="color" value="#ff8a2a"></label>
+                <label>Brightness <input id="cqUnderLevel" type="range" min="0" max="100" value="0"> <span class="cq-pct" id="cqUnderText">0%</span></label>
+              </div>
+              <div class="rt-controls">
+                <button class="btn" id="cqRecord" type="button" disabled>Record cues</button>
+                <button class="btn" id="cqPlay" type="button" disabled>Play back</button>
+                <button class="btn quiet" id="cqUndo" type="button">Take out the last cue</button>
+                <button class="btn quiet" id="cqClear" type="button">Delete all</button>
+              </div>
+              <div class="lab-msg" id="cqMsg" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="lab-stripwrap"><canvas id="cqStrip" class="rt-strip" aria-label="Colour timeline of the cues"></canvas><div class="lab-head" id="cqHead" hidden></div></div>
+          <p class="note" id="cqInfo"></p>
+          <div class="cq-listwrap"><table class="cq-list" id="cqList"></table></div>
+          <div class="rt-controls">
+            <label>Name <input id="cqName" type="text" maxlength="40" placeholder="Poison cues"></label>
+            <button class="btn" id="cqSave" type="button" disabled>Save animation</button>
+            <button class="btn quiet" id="cqToLab" type="button" disabled>Open in the Animation lab</button>
+            <button class="btn quiet" id="cqCopy" type="button" disabled>Copy the recipe</button>
+          </div>
+          <p class="note" id="cqSaveMsg" role="status"></p>
+        </div>
         <h2>Tune it</h2>
         <div class="rt-fields" id="rtFields"></div>
         <button class="btn quiet" id="rtReset" type="button">Reset to defaults</button>

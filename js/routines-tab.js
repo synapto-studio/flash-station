@@ -15,6 +15,7 @@ import { Show, makeDrive, pack } from './player.js';
 import { coreEngine, coreDrift, pulseStartup, pulseAmbient, heartbeat, heartbeatToday, pulseMusic } from './animations.js';
 import { initAnimationLab } from './lab-tab.js';
 import { initSongMoments } from './moments-tab.js';
+import { initLightCues } from './cues-tab.js';
 
 const CORE_FIELDS = [
   ['BRIGHTNESS', 'Overall brightness (0–255)', 1, 255],
@@ -55,7 +56,7 @@ export function initRoutinesTab({ $, el, state }) {
   let t = 0, playing = true, speed = 1, last = null, pulseRun = null, pulseDirty = true, pulseStage1 = null;
 
   const lensEls = [], lensEls2 = [];
-  let playerShow = null, lab = null, moments = null;
+  let playerShow = null, lab = null, moments = null, cues = null;
 
   // One side of the drive, front view, drawn from the drive profile (js/profiles.js): y is mm above
   // the top of the USB A connector, x is mm from the centre line. The profile lists only LEDs whose
@@ -69,6 +70,7 @@ export function initRoutinesTab({ $, el, state }) {
     playerShow = null;
     if (lab) lab.refresh();
     if (moments) moments.reload();
+    if (cues) cues.reload();
   }
   function buildBoardIn(board, lensEls) {
     const spots = drawnLeds(profile[family]);
@@ -326,7 +328,7 @@ export function initRoutinesTab({ $, el, state }) {
     buildProfileEditor(); buildBoard(); draw();
   }
 
-  function changed() { pulseDirty = true; playerShow = null; note(); drawStrip(); draw(); if (lab) lab.refresh(); if (moments) moments.redraw(); }
+  function changed() { pulseDirty = true; playerShow = null; note(); drawStrip(); draw(); if (lab) lab.refresh(); if (moments) moments.redraw(); if (cues) cues.refresh(); }
 
   function setFamily(f) {
     family = f;
@@ -426,10 +428,11 @@ export function initRoutinesTab({ $, el, state }) {
   });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); moments.reload(); }); // the strip can't be sized while hidden
-  window.addEventListener('resize', () => { if (!$('p-routines').hidden) { drawStrip(); lab.redrawStrip(); moments.redraw(); } });
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); moments.reload(); cues.reload(); }); // the strip can't be sized while hidden
+  window.addEventListener('resize', () => { if (!$('p-routines').hidden) { drawStrip(); lab.redrawStrip(); moments.redraw(); cues.redraw(); } });
   lab = initAnimationLab({ $, el, state, tab: { family: () => family, setFamily, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light } });
   moments = initSongMoments({ $, el, state, tab: { family: () => family, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, light } });
+  cues = initLightCues({ $, el, state, tab: { family: () => family, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light, moments, lab } });
   setFamily('core');
   requestAnimationFrame(tick);
 }

@@ -559,5 +559,9 @@ export function initSongMoments({ $, el, state, tab }) {
   return {
     reload: () => reload().catch(() => {}),
     redraw: () => { pv = null; drawAll(); },
+    // for Light cues (js/cues-tab.js): the open song, its beats and Play at
+    current: () => (song && grid ? { name: song.name, buffer: song.buffer, duration: song.duration, grid: { ...grid }, playAt: marks ? marks.playAt : null } : null),
+    // pick a saved animation for the moment (after Light cues saves one)
+    useAnimation: (name) => reload().then(() => { if (animations().some((a) => a.name === name)) { $('smAnim').value = name; pv = null; drawDrive(); previewNote(); } }).catch(() => {}),
   };
 }
