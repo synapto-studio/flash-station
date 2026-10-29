@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { packSettings, unpackSettings, layoutSize, PulseImage, PULSE, readEngine, buildInitImage, initImageToMem } from '../js/engines.js';
 import { crc16 } from '../js/crc.js';
-import { packShow, unpackShow, defaultShow, demoShow, DriveShow, DEMO_MOVES, PLUGIN_MS } from '../js/show.js';
+import { packShow, unpackShow, defaultShow, demoShow, DriveShow, DEMO_MOVES, demoMissing, PLUGIN_MS } from '../js/show.js';
 import * as P from '../js/player.js';
 import * as A from '../js/animations.js';
 import { patchPlan, fullPlan, Station } from '../js/station.js';
@@ -43,14 +43,24 @@ test('the show: packs, reads back, and the drive gets exactly that', () => {
   assert.deepEqual(packShow(back), b);
 });
 
-test('a Pulse can\'t have hits, twinkle or flicker; the demo only its six moves', () => {
+test('a Pulse can\'t have hits, twinkle or flicker; the demo only its moves, curves and blends, 4 moments', () => {
   const tw = { type: 'animation', name: 'Sparkle', board: 'pulse', timing: 'ms', layers: [{ move: 'twinkle', leds: 'all', every: 100 }] };
   assert.throws(() => P.normalise(tw), /"twinkle" isn't on a Pulse: there wasn't room for it on the Pulse's chip/);
   assert.throws(() => packShow({ ...defaultShow(), ambient: { ...tw, board: 'any' } }), /isn't on a Pulse/, 'an "any" recipe going to a Pulse too');
   assert.doesNotThrow(() => P.normalise({ ...tw, board: 'any' }), 'still fine for any other board');
-  assert.deepEqual(DEMO_MOVES, ['glow', 'fade', 'breathe', 'drift', 'pulse', 'kick']);
-  assert.throws(() => packShow(defaultShow(), { demo: true }), /"Pulse start-up" uses "wave", which the song moments demo engine doesn't have room for/);
+  assert.deepEqual(DEMO_MOVES, ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill']);   // (firmware pulsetest/tools/demo_moves.mjs)
+  assert.throws(() => packShow(defaultShow(), { demo: true }), /"Pulse start-up" uses "wave", "rainbow", the mask blend, fill from above, "wipe", which the song moments demo engine doesn't have room for/);
   assert.doesNotThrow(() => packShow(demoShow(), { demo: true }));
+  const one = (l) => ({ type: 'animation', name: 'One', board: 'pulse', timing: 'ms', once: true, layers: [{ leds: 'all', colour: 1, for: 500, ...l }] });
+  assert.deepEqual(demoMissing(one({ move: 'breathe', every: 100 })), ['"breathe"']);
+  assert.deepEqual(demoMissing(one({ move: 'fade', colour: [1, 2], curve: 'exp', blend: 'mask' })), ['the exp curve', 'the mask blend']);
+  assert.deepEqual(demoMissing(one({ move: 'pulse', every: 100, fall: 50, down: 'exp' })), ['the exp curve']);
+  assert.deepEqual(demoMissing(one({ move: 'fill', from: 0, to: 100, side: 'above' })), ['fill from above']);
+  assert.deepEqual(demoMissing(one({ move: 'fill', from: 0, to: 100, curve: 'out', blend: 'tint' })), []);
+  assert.throws(() => packShow({ ...demoShow(), ambient: one({ move: 'fade', colour: [1, 2], blend: 'mask' }) }, { demo: true }), /uses the mask blend/);
+  const m = { print: new Uint8Array(96), animation: one({ move: 'glow' }), delayMs: 0, repeat: 'every' };
+  assert.doesNotThrow(() => packShow({ ...demoShow(), moments: Array(4).fill(m) }, { demo: true }));
+  assert.throws(() => packShow({ ...demoShow(), moments: Array(5).fill(m) }, { demo: true }), /takes 4 song moments/);
 });
 
 test('song moments in the show: print, delay, repeat and animation; at most 8', () => {

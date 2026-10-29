@@ -6,6 +6,7 @@ import * as C from '../js/cues.js';
 import * as P from '../js/player.js';
 import * as L from '../js/lab.js';
 import { defaultProfile } from '../js/profiles.js';
+import { demoMissing } from '../js/show.js';
 
 const drive = P.makeDrive(defaultProfile('pulse'));
 const BPM = 174, BEAT_MS = 60000 / BPM;
@@ -66,8 +67,7 @@ test('the recipe is a beat-timed one-shot for a Pulse, using only what the 2.1 d
   assert.equal(p.recipe.board, 'pulse');
   assert.equal(p.recipe.timing, 'beats');
   assert.equal(p.recipe.once, true);
-  const demoMoves = ['glow', 'fade', 'breathe', 'drift', 'pulse', 'kick', 'fill']; // firmware tools/demo_moves.mjs
-  for (const l of p.anim.layers) assert.ok(demoMoves.includes(l.move), l.move);
+  assert.deepEqual(demoMissing(p.anim), []);   // moves, curves and blends the demo has (firmware tools/demo_moves.mjs)
   assert.equal(P.length(p.anim), 4, '4 beats long');
   // the lab reads it back the same, and its bytes unpack to it
   const back = L.readRecipe(L.recipeText(p.recipe));
@@ -90,7 +90,7 @@ test('at most 14 cues (a recipe has 15 layers); each cue is about 7 to 13 bytes'
   const one = C.build({ cues: [cue('white', 0, 0.5)], drive }).bytes;
   const two = C.build({ cues: [cue('white', 0, 0.5), cue('cut', 1, 0.5)], drive }).bytes;
   assert.ok(two - one >= 4 && two - one <= 13, `a cut costs ${two - one} bytes`);
-  // a typical burst of 8 cues fits next to Poison's moment on the 2.1 demo
+  // a typical burst of 8 cues fits on the 2.1 demo, 3 like it next to Poison's moment
   const burst = C.build({ cues: ['white', 'cut', 'shimmer', 'stutter', 'white', 'fadeUp', 'fadeDown', 'bright'].map((k, i) => cue(k, i, 1)), drive });
   assert.ok(burst.bytes <= C.DEMO_ROOM, `${burst.bytes} bytes`);
 });

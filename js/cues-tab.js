@@ -192,8 +192,8 @@ export function initLightCues({ $, el, state, tab }) {
     else if (built) {
       const fits = built.bytes <= C.DEMO_ROOM;
       info = `${cues.length} cue${cues.length === 1 ? '' : 's'} over ${totalBeats()} beats (${(totalBeats() * beatS()).toFixed(1)} s), ${built.bytes} bytes. `
-        + (fits ? `Fits on the 2.1 demo engine next to Poison's moment (room for about ${C.DEMO_ROOM}).`
-          : `Too big for the 2.1 demo engine next to Poison's moment (room for about ${C.DEMO_ROOM}): use fewer cues or fewer colours.`);
+        + (fits ? `Fits on the 2.1 demo engine: 3 animations this size next to Poison's moment (room for about ${C.DEMO_ROOM} each).`
+          : `Too big for 3 like it on the 2.1 demo engine next to Poison's moment (room for about ${C.DEMO_ROOM} each): use fewer cues or fewer colours.`);
     } else if (song) info = 'No cues yet. Press Record cues and play along.';
     $('cqInfo').textContent = info;
     $('cqInfo').classList.toggle('warn', !!buildError || (built && built.bytes > C.DEMO_ROOM));
