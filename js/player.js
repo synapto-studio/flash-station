@@ -15,6 +15,8 @@
 // A song moment can play over the normal look (over: true: the section that was playing keeps
 // going under it) and recolour it while it plays (recolour: { "1": 6 }: the set's red becomes the
 // recipe's own colour 6). kick and snare follow what the drive hears (R9).
+// R10: a layer can play again at a list of times (again: [8, 12, 16]: one layer for 30 white
+// pulses), and a fade can sweep up or down the drive (lag).
 
 const fl = Math.floor;
 
@@ -36,8 +38,10 @@ export const STATION_WHITE = [255, 247, 234]; // the box's LED line white (l, l 
 // the drive, even, -256..254), pct (% of the drive, 1-255), hits (on ms, off ms, peak), u8.
 export const MOVES = {
   glow:    { id: 0, params: [['colour', 'colour', 1], ['level', 'level', 255]] },
+  // fade's lag (R10, a sweep, as pulse's): style bit 6, then its byte after the style byte, so older
+  // fades' bytes are as before.
   fade:    { id: 1, needsFor: true, params: [['colour', 'colour2', [1, 1]], ['level', 'levels', [0, 255]]],
-             style: [['blend', 2, FADE_BLENDS, 'over', 5], ['curve', 3, CURVES, 'ease']] },
+             style: [['blend', 2, FADE_BLENDS, 'over', 5], ['curve', 3, CURVES, 'ease']], extra: ['lag'] },
   breathe: { id: 2, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['phase', 'time', 0]] },
   drift:   { id: 3, params: [['colours', 'colours'], ['level', 'level', 255], ['every', 'time'], ['phase', 'time', 0]] },
   pulse:   { id: 4, params: [['colour', 'colour', 1], ['low', 'level', 0], ['high', 'level', 255], ['every', 'time'], ['rise', 'time', 0], ['fall', 'time'], ['lag', 'lag', 0]],
@@ -61,6 +65,8 @@ export const MOVES = {
 export const PULSE_MOVES = Object.keys(MOVES).filter((m) => !MOVES[m].notOnPulse);
 const MOVE_BY_ID = Object.fromEntries(Object.entries(MOVES).flatMap(([k, m]) => [[m.id, k], ...(m.colourId ? [[m.colourId, k]] : [])]));
 const MAX_LAYERS = 15, MAX_HITS = 40;
+export const MAX_AGAIN = 64;   // repeats of one layer (R10c): each is 1-2 bytes, and the drive walks them every frame
+const AGAIN_ID = 15;           // in the bytes: a layer that plays again starts with this, then its times
 
 // Time units in the bytes: 10 ms, or 1/16 of a beat. Hit lengths: 5 ms, or 1/32 of a beat.
 // The longest time: 32767 units (5.5 minutes), or for beats 8191 (512 beats less a 16th, ~3 minutes
@@ -223,16 +229,19 @@ export function normalise(recipe) {
     if (len !== null) c.for = len;
     for (const [name, type, def] of m.params) c[name] = normParam(l[name] === undefined ? def : l[name], type, name, where, timing, custom.length);
     if (m.colourId && l.colour !== undefined) { const v = normParam(l.colour, 'colour', 'colour', where, timing, custom.length); if (v) c.colour = v; }
+    if (m.extra) Object.assign(c, fadeExtra(l, len, where, timing));
     for (const [name, , values, def] of m.style || []) {
       const v = l[name] === undefined ? def : l[name];
       if (values ? !values.includes(v) : typeof v !== 'boolean') fail(where, values ? `"${name}" must be one of ${values.join(', ')} (got ${JSON.stringify(v)}).` : `"${name}" must be true or false.`);
       c[name] = v;
     }
     checkMove(c, where);
-    const known = ['move', 'leds', 'at', ...(m.ownLength ? [] : ['for']), ...m.params.map((p) => p[0]), ...(m.colourId ? ['colour'] : []), ...(m.style || []).map((p) => p[0])];
+    const known = ['move', 'leds', 'at', ...(m.ownLength ? [] : ['for']), 'again', ...m.params.map((p) => p[0]), ...(m.colourId ? ['colour'] : []), ...(m.style || []).map((p) => p[0]), ...(m.extra || [])];
     for (const k of Object.keys(l)) if (!known.includes(k)) fail(where, `"${k}" isn't a setting of "${l.move}"${didYouMean(k, known)}. Its settings: ${known.slice(1).join(', ')}.`);
     const dur = m.ownLength ? hitsLength(c.hits) : len;
-    prev = { at, end: dur === null ? null : +(at + dur).toFixed(5) };
+    const again = normAgain(l.again, at, dur, where, timing);
+    if (again) c.again = again;
+    prev = { at, end: dur === null ? null : +((again ? again[again.length - 1] : at) + dur).toFixed(5) };
     out.layers.push(c);
   });
   if (once && length(out) === null) fail('Recipe', 'a one-shot animation ("once") needs at least one layer with a length.');
@@ -310,14 +319,43 @@ function checkMove(c, where) {
   if (c.move === 'pulse' && c.rise + c.fall > c.every + 1e-9) fail(where, '"rise" and "fall" together must fit in "every".');
 }
 
+// again: the times (from the start of the animation) a layer plays again, each later than the one
+// before; the layer needs a length. null when there are none.
+function normAgain(v, at, dur, where, timing) {
+  if (v === undefined || (Array.isArray(v) && !v.length)) return null;
+  const eg = 'like "again": [8, 12, 16] (the times it starts again, from the start of the animation)';
+  if (!Array.isArray(v)) fail(where, `"again" is a list of times in square brackets, ${eg}.`);
+  if (dur === null) fail(where, '"again" plays the layer again, so it needs a length ("for").');
+  if (v.length > MAX_AGAIN) fail(where, `"again" has ${v.length} times; the most is ${MAX_AGAIN}.`);
+  const step = STEP[timing];
+  let last = at;
+  return v.map((x, k) => {
+    const q = +(quant(x, step, where, `again ${k + 1}`, MAXQ[timing]) * step).toFixed(4);
+    if (q <= last + 1e-9) fail(where, `"again" times must each be later than the one before (and than "at"): ${x} comes after ${last}.`);
+    last = q;
+    return q;
+  });
+}
+
+// fade's lag (R10): each LED's fade starts `lag`'s delay later and takes the rest of the layer
+// (for - |lag|), so the last one still finishes with it. Kept only when it isn't 0.
+function fadeExtra(l, len, where, timing) {
+  const lag = normParam(l.lag === undefined ? 0 : l.lag, 'lag', 'lag', where, timing);
+  if (!lag) return {};
+  if (Math.abs(lag) >= len - 1e-9) fail(where, `"lag" (${lag}) must be shorter than the fade's length (${len}): each LED's fade starts that much later and still ends with the layer.`);
+  return { lag };
+}
+
 const hitsLength = (hits) => +hits.reduce((n, h) => n + h[0] + h[1], 0).toFixed(5);
 
 // When each layer starts and ends (in ms or beats), and the animation's length: a one-shot's
 // end, or a loop's cycle (null: a loop with no timed layers just runs).
+// (a layer that plays again ends with its last repeat: for the layer after it that starts "when
+// the layer before ends" too)
 function layerTimes(anim) {
   return anim.layers.map((l) => {
     const dur = MOVES[l.move].ownLength ? hitsLength(l.hits) : (l.for || null);
-    return { at: l.at, end: dur === null ? null : +(l.at + dur).toFixed(5) };
+    return { at: l.at, dur, end: dur === null ? null : +((l.again ? l.again[l.again.length - 1] : l.at) + dur).toFixed(5) };
   });
 }
 export function length(anim) {
@@ -351,6 +389,14 @@ export function pack(recipe) {
     const m = MOVES[l.move], prev = times[i - 1];
     const startMode = l.at === 0 ? 0 : prev && prev.end !== null && Math.abs(l.at - prev.end) < 1e-9 ? 1 : prev && Math.abs(l.at - prev.at) < 1e-9 ? 2 : 3;
     const same = i > 0 && mask(l.leds) === mask(a.layers[i - 1].leds), coloured = m.colourId && l.colour;
+    if (l.again) {   // plays again: move 15, how many bytes its gaps take, their sum, then the gap from each start to the next
+      const gaps = [];
+      let from = l.at;
+      for (const x of l.again) { putTime(gaps, Math.round((x - from) / step)); from = x; }
+      out.push(AGAIN_ID, gaps.length);
+      putTime(out, Math.round((from - l.at) / step));
+      out.push(...gaps);
+    }
     out.push((coloured ? m.colourId : m.id) | (startMode << 4) | (l.for ? 64 : 0) | (same ? 128 : 0));
     if (!same) out.push(mask(l.leds));
     if (startMode === 3) putTime(out, Math.round(l.at / step));
@@ -375,7 +421,9 @@ export function pack(recipe) {
         if (hi !== undefined) s |= (v >> bits) << hi; // a value past what its bits hold (fade's flash)
         shift += bits;
       }
+      if (m.extra && l.lag) s |= 64;
       out.push(s);
+      if (m.extra && l.lag) out.push(Math.round(l.lag / step) & 255);
     }
   });
   return Uint8Array.from(out);
@@ -414,6 +462,16 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
   let leds = null, prev = null;
   for (let k = 0; k < count; k++) {
     need(1);
+    let gaps = null;
+    if (b[p.i] === AGAIN_ID) {   // the layer after this plays again
+      p.i++;
+      need(2);
+      const n = b[p.i++], span = getTime(b, p), stop = p.i + n;
+      need(n + 1);
+      gaps = [];
+      while (p.i < stop) gaps.push(getTime(b, p));
+      if (p.i !== stop || !gaps.length || gaps.length > MAX_AGAIN || gaps.reduce((a, g) => a + g, 0) !== span) throw new RecipeError(`Layer ${k + 1}'s repeats don't add up.`);
+    }
     const x = b[p.i++], move = MOVE_BY_ID[x & 15], m = MOVES[move];
     if (!m) throw new RecipeError(`Layer ${k + 1} has an unknown move number ${x & 15}.`);
     if (!(x & 128)) { need(1); leds = unmask(b[p.i++]); } else if (!leds) throw new RecipeError('The first layer must give its LEDs.');
@@ -454,9 +512,16 @@ export function unpack(bytes, { name = 'Untitled', board = 'any' } = {}) {
         if (values && values[v] === undefined) throw new RecipeError(`Layer ${k + 1} (${move}) has an unknown ${name} number ${v}.`);
         ordered[name] = values ? values[v] : !!v;
       }
+      if (m.extra && s0 & 64) { need(1); ordered.lag = unit((b[p.i++] << 24) >> 24); }
+    }
+    if (gaps) {
+      if (!ordered.for && !m.ownLength) throw new RecipeError(`Layer ${k + 1} plays again but has no length.`);
+      let q = Math.round(ordered.at / step);
+      ordered.again = gaps.map((g) => unit(q += g));
     }
     const dur = m.ownLength ? hitsLength(ordered.hits) : (ordered.for || null);
-    prev = { at: ordered.at, end: dur === null ? null : +(ordered.at + dur).toFixed(5) };
+    const last = ordered.again ? ordered.again[ordered.again.length - 1] : ordered.at;
+    prev = { at: ordered.at, end: dur === null ? null : +(last + dur).toFixed(5) };
     anim.layers.push(ordered);
   }
   if (p.i !== b.length) throw new RecipeError(`The animation bytes have ${b.length - p.i} left over at the end.`);
@@ -532,6 +597,7 @@ function prepare(anim) {
   const layers = anim.layers.map((l, i) => {
     const q = { ...l, mask: mask(l.leds), at: T(times[i].at), end: times[i].end === null ? Infinity : T(times[i].end), blend: l.blend || 'over' };
     for (const key of ['every', 'phase', 'rise', 'fall', 'lag', 'for']) if (key in l) q[key] = T(l[key]);
+    if (l.again) { q.again = l.again.map(T); q.dur = T(times[i].dur); }
     for (const key of ['from', 'to']) if (key in l) q[key] = l[key] * 100;
     for (const key of ['width', 'edge', 'crest', 'behind']) if (key in l) q[key] = l[key] * 100;
     if (l.hits) q.hits = l.hits.map(([on, off, peak]) => [T(on), T(off), peak]);
@@ -552,7 +618,13 @@ function moveAt(q, t, i, ctx) {
   const pal = ctx.palette, h = ctx.drive.heights[i];
   switch (q.move) {
     case 'glow': return [pal[q.colour], q.level];
-    case 'fade': { const k = CURVE[q.curve](prog(t, q.for)); return [mix(pal[q.colour[0]], pal[q.colour[1]], k), lerp(q.level[0], q.level[1], k)]; }
+    case 'fade': {
+      // with a lag each LED starts later (until then it doesn't draw) and takes the rest of the layer
+      const d = q.lag ? delay(q.lag, h) : 0;
+      if (t < d) return null;
+      const k = fadeK(q, t - d);
+      return [mix(pal[q.colour[0]], pal[q.colour[1]], k), lerp(q.level[0], q.level[1], k)];
+    }
     case 'breathe': {
       const p = fl((mod(t + q.phase, q.every)) * 512 / q.every), w = p < 256 ? 255 - p : p - 256;
       return [pal[q.colour], lerp(q.low, q.high, ease(w))];
@@ -617,6 +689,8 @@ function moveAt(q, t, i, ctx) {
   }
   return [[0, 0, 0], 0];
 }
+// How far a fade is from `from` to `to` (0-255), f into this LED's fade (all of the layer, less a lag)
+const fadeK = (q, f) => CURVE[q.curve](prog(f, q.for - Math.abs(q.lag || 0)));
 function wheel(h) {
   if (h < 85) return [255 - h * 3, h * 3, 0];
   if (h < 170) { h -= 85; return [0, 255 - h * 3, h * 3]; }
@@ -646,12 +720,16 @@ export function levels(anim, t, ctx) {
   if (!anim.once && prep.length !== null) t %= prep.length;
   for (const q of prep.layers) {
     if (t < q.at || t >= q.end) continue;
-    const lt = t - q.at;
+    let from = q.at;   // a layer that plays again: from its latest start
+    if (q.again) { for (const a of q.again) { if (a > t) break; from = a; } if (t - from >= q.dur) continue; }
+    const lt = t - from;
     for (let i = 0; i < n; i++) {
       if (!(q.mask & (1 << i))) continue;
       const cur = out[i];
       if (q.move === 'wipe') { out[i] = wipeAt(q, lt, i, ctx); continue; }
-      const [c, v] = moveAt(q, lt, i, ctx);
+      const got = moveAt(q, lt, i, ctx);
+      if (!got) continue;
+      const [c, v] = got;
       const blend = q.move === 'kick' || q.move === 'snare' ? (c ? 'flash' : 'lift') : q.blend;
       if (blend === 'over') { cur.c = c; cur.l = v; }
       else if (blend === 'mask') cur.l = fl(cur.l * v / 255);

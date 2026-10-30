@@ -295,3 +295,75 @@ test('kick with a colour: move 14 with one more byte; a plain kick as before', (
   assert.ok(!('colour' in P.unpack(k()).layers[0]));
   assert.deepEqual([...P.pack({ timing: 'beats', layers: [{ move: 'snare' }] })], [17, 13, 255, 85, 0]);
 });
+
+// ---------------------------------------------------------------- R10: repeats, fade sweep and in/out
+const drive8 = P.makeDrive(defaultProfile('pulse'));
+const ctx8 = (music = P.steadyMusic(0)) => ({ drive: drive8, palette: P.palette({}), music });
+const BAR = 65536, BEAT = 16384;
+
+test('R10 bytes: "again" is move 15, the bytes its gaps take, their sum and the gaps; 30 white pulses in one layer', (t) => {
+  const one = { type: 'animation', board: 'pulse', timing: 'beats', once: true, over: true,
+    layers: [{ move: 'fade', leds: 'all', at: 2, for: 0.5, colour: [3, 3], level: [255, 0], curve: 'out', blend: 'flash' }] };
+  const again = Array.from({ length: 29 }, (_, k) => 2 + (k + 1) * 1);   // every beat after the first
+  const many = { ...one, layers: [{ ...one.layers[0], again }] };
+  const a = P.pack(one), b = P.pack(many);
+  assert.deepEqual([...b.slice(0, 2)], [...a.slice(0, 2)], 'header and recolour byte as before');
+  assert.deepEqual([...b.slice(2, 6)], [15, 29, 0x81, 0xD0], 'move 15, 29 bytes of gaps, their sum (29 beats: 464 sixteenths)');
+  assert.ok(b.slice(6, 6 + 29).every((x) => x === 16), 'each start a beat (16 sixteenths) after the one before');
+  assert.equal(b.length, a.length + 4 + 29);
+  assert.deepEqual([...b.slice(6 + 29)], [...a.slice(2)], 'then the layer as it was');
+  const back = P.unpack(b, { board: 'pulse' });
+  assert.deepEqual(back, P.normalise(many));
+  assert.deepEqual(P.pack(back), b);
+  assert.equal(P.length(P.normalise(many)), 31.5, 'it ends with its last repeat');
+  // 2 bytes when a gap is 8 beats or more
+  const far = P.pack({ ...one, layers: [{ ...one.layers[0], again: [12, 300] }] });
+  assert.deepEqual([...far.slice(2, 10)], [15, 4, 0x92, 0xA0, 128, 160, 146, 0], '4 bytes of gaps adding up to 4768 sixteenths: 10 beats (160) and 288 beats (4608), 2 bytes each');
+  // a layer after it that starts "when the layer before ends" starts after the last repeat
+  const after = { ...many, layers: [many.layers[0], { move: 'glow', leds: 'all', at: 31.5, for: 1, colour: 3 }] };
+  const ab = P.pack(after);
+  assert.equal(ab[ab.length - 4], 0 | 16 | 64 | 128, 'glow, start mode 1 (when the layer before and its repeats end), a length, the same LEDs');
+  assert.deepEqual(P.unpack(ab, { board: 'pulse' }), P.normalise(after));
+  t.diagnostic(`30 white pulses: ${b.length} bytes in one layer (one layer each: ${a.length - 1} each, ${30 * (a.length - 1) + 1})`);
+  assert.throws(() => P.unpack(Uint8Array.from([...b.slice(0, 4), 0x81, 0xD1, ...b.slice(6)])), /don't add up/);
+});
+
+test('R10: a layer that plays again plays from its latest start, the same each time, dark between', () => {
+  const base = { type: 'animation', board: 'pulse', timing: 'beats', once: true,
+    layers: [{ move: 'fade', leds: 'all', at: 1, for: 1, colour: [3, 3], level: [255, 0], curve: 'linear' }] };
+  const rep = { ...base, layers: [{ ...base.layers[0], again: [4, 4.5] }] };
+  const A1 = P.normalise(base), R = P.normalise(rep);
+  for (const [t, at] of [[1, 1], [1.25, 1], [1.9, 1], [4, 4], [4.25, 4], [4.5, 4.5], [5.4, 4.5]]) {
+    assert.deepEqual(P.levels(R, Math.round(t * BEAT), ctx8()), P.levels(A1, Math.round((t - at + 1) * BEAT), ctx8()), `at ${t} beats`);
+  }
+  for (const t of [0.5, 2, 3.5, 5.5, 6]) assert.ok(P.levels(R, t * BEAT, ctx8()).every((x) => x.l === 0), `dark at ${t}`);
+});
+
+test('R10: a fade with a lag sweeps up the drive: each LED starts later, all end with the layer', () => {
+  const sweep = P.normalise({ timing: 'beats', once: true, layers: [{ move: 'fade', leds: 'all', for: 4, colour: [3, 3], level: [255, 0], curve: 'linear', lag: 2, blend: 'flash' }] });
+  const under = Array.from({ length: 8 }, () => ({ c: [255, 0, 0], l: 50 }));
+  const at = (b) => P.levels(sweep, Math.round(b * BEAT), { ...ctx8(), under });
+  const top = drive8.heights.indexOf(10000), bottom = drive8.heights.indexOf(0);
+  assert.equal(at(0)[bottom].l, 255, 'the bottom flashes at once');
+  assert.deepEqual(at(0)[top], under[top], 'the top is untouched until the sweep gets there');
+  assert.equal(at(2)[top].l, 255, 'the top flashes 2 beats later');
+  assert.deepEqual(at(2.01)[bottom], under[bottom], 'the bottom has finished (2 beats each) and is back to what is under');
+  assert.ok(at(3.99)[top].l <= 51, 'the top ends with the layer');
+  const b = P.pack(sweep), back = P.unpack(b);
+  assert.deepEqual(back.layers[0], sweep.layers[0]);
+  assert.equal(b[b.length - 2] & 64, 64, 'style bit 6: a lag byte follows');
+  assert.equal(b[b.length - 1], 32, 'lag 2 beats');
+  const plain = { timing: 'beats', once: true, layers: [{ move: 'fade', leds: 'all', for: 4, level: [255, 0] }] };
+  assert.deepEqual(P.pack({ ...plain, layers: [{ ...plain.layers[0], lag: 0 }] }), P.pack(plain), 'lag 0: the bytes as before');
+});
+
+test('R10 errors: again needs a length and later times; a lag must be shorter than the fade', () => {
+  const bad = (l, re) => assert.throws(() => P.normalise({ timing: 'beats', once: true, layers: [l] }), re);
+  bad({ move: 'glow', again: [2] }, /needs a length/);
+  bad({ move: 'glow', for: 1, at: 2, again: [2] }, /later than the one before/);
+  bad({ move: 'glow', for: 1, again: [3, 2] }, /later than the one before/);
+  bad({ move: 'glow', for: 1, again: Array.from({ length: 65 }, (_, k) => k + 1) }, /the most is 64/);
+  bad({ move: 'glow', for: 1, again: '2' }, /list of times/);
+  bad({ move: 'fade', for: 2, lag: 2 }, /shorter than the fade/);
+  bad({ move: 'fade', for: 2, in: 1 }, /"in" isn't a setting of "fade"/);
+});
