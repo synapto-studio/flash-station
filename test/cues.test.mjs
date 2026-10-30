@@ -397,3 +397,15 @@ test('R10b: tracks go in the recipe and come back from a saved animation; 30 whi
   assert.equal(C.cleanTracks({ rows: [{ kind: 'nope', groups: [] }, { kind: 'white', groups: [{ at: [-1, 'x'], look: {} }] }] }).rows[0].groups.length, 0);
   assert.equal(C.cleanTracks('rows'), null);
 });
+
+test('R10b: a timeline saved to the library\'s animations/ keeps its tracks and is listed to open again', async () => {
+  const { Library, MemoryStore } = await import('../js/library.js');
+  const lib = new Library(new MemoryStore());
+  const t = tracksWith(row('white', [{ at: [0, 1, 2], look: C.defaultLook('white') }], { name: 'Pulses' }), row('cut', [{ at: [3], look: C.defaultLook('cut') }], { muted: true }));
+  const b = C.buildTracks({ name: 'Drop cues', tracks: t, drive });
+  await lib.saveAnimation(b.recipe, 'Drop cues');
+  const [back] = (await lib.animations('pulse')).filter((a) => a.tracks);
+  assert.equal(back.name, 'Drop cues');
+  assert.deepEqual(C.cleanTracks(back.tracks), C.cleanTracks(t));
+  assert.deepEqual(P.pack(back), P.pack(b.recipe));
+});
