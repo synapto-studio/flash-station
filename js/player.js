@@ -116,7 +116,8 @@ function didYouMean(word, options, likely = LIKELY) {
   return best ? ` (did you mean "${best}"?)` : '';
 }
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'over', 'recolour', 'custom', 'notes', 'layers', 'steps'];
+// (tracks: Light cues' own timeline, R10b, kept with the recipe so it opens again as tracks; not played)
+export const RECIPE_KEYS = ['type', 'name', 'board', 'timing', 'once', 'over', 'recolour', 'custom', 'notes', 'layers', 'steps', 'tracks'];
 const RECIPE_LIKELY = { colours: 'custom', colors: 'custom', customcolours: 'custom', customcolors: 'custom', palette: 'custom', rgb: 'custom', recolor: 'recolour', ontop: 'over', overlay: 'over' };
 
 // The recipe's own colours: a list of up to 10 [r, g, b], the first is colour 6.
