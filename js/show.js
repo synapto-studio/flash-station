@@ -26,8 +26,8 @@ export const PLUGIN_MS = 2146;            // the box's heartbeats start (station
 // room for only these moves, curves and blends, fill only from below, and 4 song moments (Jonny,
 // 22 and 29 Oct 2026; the firmware's own lists: pulsetest/tools/demo_moves.mjs). 4 moments that all
 // match at once take ~24 ms of a 12.8 ms block (the next block waits); 5 would lose a block.
-// R9 (app 29 Oct 2026, firmware R9b to come): moments over the normal look, recolour, snare, kick
-// and snare with a colour, and fade's flash blend.
+// R9 (app 29 Oct 2026, firmware R9b the same day): moments over the normal look, recolour, snare,
+// kick and snare with a colour, and fade's flash blend.
 export const DEMO_MOVES = ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill', 'snare'];
 export const DEMO_CURVES = ['linear', 'ease', 'in', 'out'];
 export const DEMO_BLENDS = ['over', 'tint', 'lift', 'flash'];
