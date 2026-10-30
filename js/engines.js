@@ -284,6 +284,20 @@ export class PulseImage {
 }
 
 // ---------------------------------------------------------------- reading engine files
+// What the app calls a pulsetest engine. Engine 2 builds numbered under x.5 are the song moments
+// demo (no Flash Station plug-in animation): "pulsetest demo 2.2", so it isn't mixed up with
+// engine 2.5 (Jonny, 30 Oct 2026); the mic check is built the same way.
+function pulseLabel(version, layout, fileName = '') {
+  const v = version.join('.');
+  if (layout !== 2) return `pulsetest ${v}`;
+  if (version[1] >= 5) return `pulsetest ${v} (engine 2)`;
+  return /miccheck/i.test(fileName) ? `pulsetest mic check ${v}` : `pulsetest demo ${v}`;
+}
+// Two labels for the same engine: drives in the register from before 30 Oct 2026 say a demo was
+// "pulsetest 2.1 (engine 2)".
+const oldLabel = (l) => String(l || '').replace(/^pulsetest (\d+)\.([0-4]) \(engine 2\)$/, 'pulsetest demo $1.$2');
+export const sameEngine = (a, b) => oldLabel(a) === oldLabel(b);
+
 export function readEngine(mem, fileName = '') {
   const end = flashEnd(mem);
   const flash = slice(mem, 0, end);
@@ -316,7 +330,7 @@ export function readEngine(mem, fileName = '') {
       chip: 'attiny1614',
       tag: 'SOTA.PLS',
       version,
-      label: `pulsetest ${version.join('.')}${set.layout === 2 ? ' (engine 2)' : ''}`,
+      label: pulseLabel(version, set.layout, fileName),
       layout: set.layout,
       hasBootloader: hasBoot,
       boot,

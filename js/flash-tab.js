@@ -9,7 +9,7 @@
 // register right when the library knows what the drive has (js/lighting.js). For Pulse engine 2
 // the card and the engine picker say which animations and song moments the engine plays.
 
-import { PulseImage } from './engines.js';
+import { PulseImage, sameEngine } from './engines.js';
 import {
   Station, StationError, testPlan, patchPlan, fullPlan, planMs, formatDuration,
   coreTestPlan, coreSettingsPlan, coreForgetPlan, coreHelloPlan, parseHello, canListen, canProbe,
@@ -57,7 +57,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   const engineOf = (d) => {
     if (!d || !d.engine) return null;
     const all = [...state.engines, ...state.demo];
-    return all.find((e) => e.fileName === d.engine.file) || all.find((e) => e.label === d.engine.label) || null;
+    return all.find((e) => e.fileName === d.engine.file) || all.find((e) => sameEngine(e.label, d.engine.label)) || null;
   };
   // What an engine plays (Pulse engine 2), named from the library's files by contents.
   const plays = (e) => whatItPlays(e, { animations: state.animations, moments: state.moments });
@@ -82,7 +82,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     if (drive.family === 'core') return coreLimits(drive, engine);
     const r = { test: null, settings: null, engine: null };
     if (!engine) r.settings = r.engine = 'Add a pulsetest engine file in the Library tab.';
-    else if (drive.engine && drive.engine.label !== engine.label) {
+    else if (drive.engine && !sameEngine(drive.engine.label, engine.label)) {
       r.settings = `${drive.drive} runs ${drive.engine.label}. Settings can only go to a drive running the same engine: send the whole engine instead.`;
     }
     if (drive.engine && drive.engine.kind && drive.engine.kind !== 'pulsetest') r.settings = r.engine = `${drive.drive} runs ${drive.engine.label}, which has no bootloader. The station can't send it a new engine; use the Initialise tab.`;

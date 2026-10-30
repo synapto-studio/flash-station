@@ -146,3 +146,10 @@ test('Intel HEX round trip, including the fuse segment', () => {
   assert.deepEqual(parseHex(toHex(mem)), mem);
   assert.throws(() => parseHex(':0100000001FF\n'), /checksum/);
 });
+
+test('a song moments demo engine is "pulsetest demo 2.2", not to be mixed up with engine 2.5; old register labels still match', async () => {
+  const { sameEngine } = await import('../js/engines.js');
+  assert.ok(sameEngine('pulsetest 2.1 (engine 2)', 'pulsetest demo 2.1'));
+  assert.ok(!sameEngine('pulsetest 2.5 (engine 2)', 'pulsetest demo 2.5'));
+  assert.ok(!sameEngine('pulsetest demo 2.1', 'pulsetest demo 2.2'));
+});
