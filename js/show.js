@@ -22,7 +22,7 @@ import { Matcher, unpackPrint } from './songs.js';
 export const SHOW_ANIMS = ['startup', 'ambient', 'plugin', 'heartbeat'];
 export const MAX_MOMENTS = 8;
 export const PLUGIN_MS = 2146;            // the box's heartbeats start (station/patterns.h)
-// The song moments demo engine (pulsetest 2.1 demo: song moments, no Flash Station plug-in) has
+// The song moments demo engine (pulsetest 2.2 demo, 2.1 before R9b: song moments, no Flash Station plug-in) has
 // room for only these moves, curves and blends, fill only from below, and 4 song moments (Jonny,
 // 22 and 29 Oct 2026; the firmware's own lists: pulsetest/tools/demo_moves.mjs). 4 moments that all
 // match at once take ~24 ms of a 12.8 ms block (the next block waits); 5 would lose a block.

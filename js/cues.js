@@ -22,7 +22,7 @@ export const maxCues = (u) => (underMode(u) === 'colour' ? MAX_CUES - 1 : MAX_CU
 export const LOOK_COLOURS = { 1: 'Red', 2: 'Orange' };
 const HIT_LOUD = 60; // dB: kick and snare cues flash whenever the drive hears them (it recognised the song)
 export const STEP = 1 / 16;          // the recipe's finest time: 1/16 of a beat
-// Room on the 2.1 demo engine for one more song moment's animation next to Poison's (firmware R9b,
+// Room on the 2.2 demo engine for one more song moment's animation next to Poison's (firmware R9b,
 // 29 Oct 2026: moments over the normal look took 448 bytes of the show's room, so 340 are free, less
 // the moment's print, 96, and its delay and flags, 7). Two more fit only with animations up to ~67
 // bytes (Poison's 5DJ orange to green is 67). 788 free (3 more of 159) before R9b.

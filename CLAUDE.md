@@ -28,6 +28,7 @@ When Jonny describes an animation, follow "Making an animation in a session" in 
 - Demo engines (`js/demo.js`) must never reach a real programmer.
 - Anything that talks to hardware gets a simulated version and a test first (see `js/sim.js`). Check UI changes with a headless Chromium screenshot (Playwright; Chromium is at /opt/pw-browsers in cloud sessions).
 - UI copy: sentence case, plain verbs, errors say what to do next. Smoked-resin dark theme; orange (`--resin`) is the only accent.
+- Engine versions: a firmware build that changes gets a new version number and file name, never the same one again (firmware repo CLAUDE.md). Say the version (e.g. "the 2.2 demo") in UI copy and docs.
 - Engine names: **coretest** (Core, ATtiny412, was "Motor Start"), **pulsetest** (Pulse, ATtiny1614, was "Rise"), **Beat** (older Pulse engine). Drive labels: C-0001, P-0001.
 
 ## Map

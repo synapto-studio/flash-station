@@ -62,7 +62,7 @@ test('a cut goes dark over cues that started at the same time', () => {
   assert.ok(sum(p.at(1.6)) > 0, 'the shimmer carries on after the cut and the white pulse');
 });
 
-test('the recipe is a beat-timed one-shot for a Pulse, using only what the 2.1 demo plays', () => {
+test('the recipe is a beat-timed one-shot for a Pulse, using only what the 2.2 demo plays', () => {
   const p = play([cue('white', 0, 0.5), cue('stutter', 1, 2), cue('fadeDown', 3, 1)], { colour: ORANGE, level: 20 });
   assert.equal(p.recipe.board, 'pulse');
   assert.equal(p.recipe.timing, 'beats');
@@ -93,7 +93,7 @@ test('at most 15 cues (a recipe has 15 layers), 14 over a colour; each cue is ab
   const one = C.build({ cues: [cue('white', 0, 0.5)], drive }).bytes;
   const two = C.build({ cues: [cue('white', 0, 0.5), cue('cut', 1, 0.5)], drive }).bytes;
   assert.ok(two - one >= 4 && two - one <= 13, `a cut costs ${two - one} bytes`);
-  // a typical burst of 8 cues fits on the 2.1 demo next to Poison's moment
+  // a typical burst of 8 cues fits on the 2.2 demo next to Poison's moment
   const burst = C.build({ cues: ['white', 'cut', 'shimmer', 'stutter', 'white', 'fadeUp', 'fadeDown', 'bright'].map((k, i) => cue(k, i, 1)), drive });
   assert.ok(burst.bytes <= C.DEMO_ROOM, `${burst.bytes} bytes`);
 });

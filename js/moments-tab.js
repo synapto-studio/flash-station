@@ -106,7 +106,7 @@ export function initSongMoments({ $, el, state, tab }) {
     b.replaceChildren(head, el('span', { class: 'sm-quiet-db', text: `${q.db} dB` }),
       q.phoneDb === null ? '' : ` (a phone's sound meter would show about ${q.phoneDb} dB(A) for this music)`,
       `. Quieter than that it mostly misses it. ${rooms[0].toUpperCase()}${rooms.slice(1)} `,
-      el('span', { class: 'note', text: 'Simulated for the bench Pulse and the 2.1 demo, with the music measured where the drive is. Not bench-tested yet.' }));
+      el('span', { class: 'note', text: 'Simulated for the bench Pulse and the demo engine (2.1 and 2.2 hear the same), with the music measured where the drive is. Not bench-tested yet.' }));
   }
   function hearQuiet() {
     if (!learntOk() || learnt.quiet !== undefined) return;
