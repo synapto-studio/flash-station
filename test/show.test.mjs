@@ -5,9 +5,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { packSettings, unpackSettings, layoutSize, PulseImage, PULSE, readEngine, buildInitImage, initImageToMem } from '../js/engines.js';
 import { crc16 } from '../js/crc.js';
-import { packShow, unpackShow, defaultShow, demoShow, DriveShow, DEMO_MOVES, demoMissing, PLUGIN_MS } from '../js/show.js';
+import { packShow, unpackShow, defaultShow, demoShow, demoAmbient, DriveShow, DEMO_MOVES, demoMissing, PLUGIN_MS } from '../js/show.js';
 import * as P from '../js/player.js';
 import * as A from '../js/animations.js';
+import { defaultProfile } from '../js/profiles.js';
+import * as pulsePreview from '../js/preview-pulse.js';
 import { patchPlan, fullPlan, Station } from '../js/station.js';
 import { SimStation, SimDrive } from '../js/sim-station.js';
 
@@ -48,7 +50,7 @@ test('a Pulse can\'t have hits, twinkle or flicker; the demo only its moves, cur
   assert.throws(() => P.normalise(tw), /"twinkle" isn't on a Pulse: there wasn't room for it on the Pulse's chip/);
   assert.throws(() => packShow({ ...defaultShow(), ambient: { ...tw, board: 'any' } }), /isn't on a Pulse/, 'an "any" recipe going to a Pulse too');
   assert.doesNotThrow(() => P.normalise({ ...tw, board: 'any' }), 'still fine for any other board');
-  assert.deepEqual(DEMO_MOVES, ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill', 'snare']);   // (firmware pulsetest/tools/demo_moves.mjs; snare from R9b)
+  assert.deepEqual(DEMO_MOVES, ['glow', 'fade', 'pulse', 'kick', 'fill', 'snare']);   // (firmware pulsetest/tools/demo_moves.mjs; snare from R9b; no drift from R10)
   assert.throws(() => packShow(defaultShow(), { demo: true }), /"Pulse start-up" uses "wave", "rainbow", the mask blend, fill from above, "wipe", which the song moments demo engine doesn't have room for/);
   assert.doesNotThrow(() => packShow(demoShow(), { demo: true }));
   const one = (l) => ({ type: 'animation', name: 'One', board: 'pulse', timing: 'ms', once: true, layers: [{ leds: 'all', colour: 1, for: 500, ...l }] });
@@ -125,4 +127,20 @@ test('DriveShow on a Flash Station: the plug-in until 2146 ms, then the heartbea
   assert.deepEqual(d.station(500), P.toPixels(P.levels(plugin, 500, ctx)));
   assert.deepEqual(d.station(PLUGIN_MS + 1234), P.toPixels(P.levels(heart, 1234, ctx)));
   assert.equal(d.station(700)[0][0], 85, 'the drive holds the bootloader\'s listening glow (148 squared: 85)');
+});
+
+test('R10: the demo\'s ambient (drift as fades) lights every LED as today\'s ambient, with the beat, kicks and tuned settings', () => {
+  const drive = P.makeDrive(defaultProfile('pulse'));
+  const pal = P.palette({ red: [255, 0, 200], orange: [0, 255, 230], white: [190, 235, 255] });
+  for (const S of [undefined, { ...pulsePreview.DEFAULTS, cycleBars: 3, bottomLevel: 170 }]) {
+    const a = P.normalise(A.pulseAmbient(S)), d = P.normalise(demoAmbient(S));
+    assert.ok(!d.layers.some((l) => l.move === 'drift'));
+    assert.deepEqual(demoMissing(d), []);
+    for (let k = 0; k < 4000; k++) {
+      const t = k * 997, music = { bar: (k * 7919) & 65535, kick: k % 3 ? 0 : (k * 37) & 255, snare: 0, loud: 1500 };
+      assert.deepEqual(P.levels(d, t, { drive, palette: pal, music }), P.levels(a, t, { drive, palette: pal, music }), `at ${t}`);
+    }
+  }
+  assert.deepEqual(demoMissing({ layers: [{ move: 'fade', for: 2, lag: 1 }, { move: 'drift', colours: [1, 2], every: 1 }] }), ['a fade that sweeps (lag)', '"drift"']);
+  assert.deepEqual(demoMissing({ timing: 'beats', layers: [{ move: 'fade', for: 1, again: [2, 3] }] }), [], 'repeats are on the demo');
 });

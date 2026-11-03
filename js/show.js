@@ -27,8 +27,9 @@ export const PLUGIN_MS = 2146;            // the box's heartbeats start (station
 // 22 and 29 Oct 2026; the firmware's own lists: pulsetest/tools/demo_moves.mjs). 4 moments that all
 // match at once take ~24 ms of a 12.8 ms block (the next block waits); 5 would lose a block.
 // R9 (app 29 Oct 2026, firmware R9b the same day): moments over the normal look, recolour, snare,
-// kick and snare with a colour, and fade's flash blend.
-export const DEMO_MOVES = ['glow', 'fade', 'drift', 'pulse', 'kick', 'fill', 'snare'];
+// kick and snare with a colour, and fade's flash blend. R10 (30 Oct 2026, demo 2.3): layers that play
+// again ("again"); no drift (its ambient's drift is 2 fades: demoAmbient) and no fade sweeps (lag), for room.
+export const DEMO_MOVES = ['glow', 'fade', 'pulse', 'kick', 'fill', 'snare'];
 export const DEMO_CURVES = ['linear', 'ease', 'in', 'out'];
 export const DEMO_BLENDS = ['over', 'tint', 'lift', 'flash'];
 export const DEMO_MAX_MOMENTS = 4;
@@ -41,7 +42,19 @@ export function demoMissing(r) {
     ...[l.curve, l.up, l.down].filter((c) => c && !DEMO_CURVES.includes(c)).map((c) => `the ${c} curve`),
     ...(l.blend && !DEMO_BLENDS.includes(l.blend) ? [`the ${l.blend} blend`] : []),
     ...(l.move === 'fill' && l.side === 'above' ? ['fill from above'] : []),
+    ...(l.move === 'fade' && l.lag ? ['a fade that sweeps (lag)'] : []),
   ]))];
+}
+
+// The ambient on the demo engine: today's (js/animations.js pulseAmbient) with its drift as fades
+// from each colour to the next, one after the other: the same LEDs every frame (the same sums), and
+// the loop is as long as the drift's round (its other layers aren't timed, and its top pulse follows
+// the bar). The demo has no drift (R10, for room).
+export function demoAmbient(S = pulse.DEFAULTS) {
+  const a = A.pulseAmbient(S);
+  return { ...a, layers: a.layers.flatMap((l) => (l.move !== 'drift' ? [l] : l.colours.map((c, k) => ({
+    move: 'fade', leds: l.leds, at: k * l.every, for: l.every, colour: [c, l.colours[(k + 1) % l.colours.length]], level: [l.level, l.level], curve: 'ease',
+  })))) };
 }
 
 const le16 = (n) => [n & 255, n >> 8];
@@ -115,7 +128,7 @@ export function demoShow(moments = [], S = pulse.DEFAULTS, profile = defaultProf
     heights: makeDrive(profile).heights,
     startup: { type: 'animation', name: 'Demo start-up', board: 'pulse', timing: 'ms', once: true,
       layers: [{ move: 'fade', leds: 'all', for: 1500, colour: [3, 1], level: [0, 255], curve: 'ease' }] },
-    ambient: A.pulseAmbient(S), plugin: null, heartbeat: null,
+    ambient: demoAmbient(S), plugin: null, heartbeat: null,
     moments: moments.map(({ moment, animation }) => ({ print: moment.print, delayMs: moment.delayMs, repeat: moment.repeat, animation })),
   };
 }

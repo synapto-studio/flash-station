@@ -195,3 +195,38 @@ test('R9 on the drive (DriveShow): a moment over the normal look keeps the ambie
   assert.ok(back > from + 400 && back < from + 460, `the moment ends after its 16 beats (${back - from} blocks)`);
   for (let k = back; k < end; k++) assert.ok(same(withIt, without, k, ALL), `after: block ${k}`);
 });
+
+test('R10 on the drive (DriveShow, the demo\'s show): a Light cues timeline with a Recolour and 8 linked white pulses plays as the cues screen draws it', async () => {
+  const { demoShow, DriveShow, demoMissing } = await import('../js/show.js');
+  const C = await import('../js/cues.js');
+  const PL = await import('../js/player.js');
+  const { defaultProfile } = await import('../js/profiles.js');
+  const song = makeSong({ bars: 26, drops: [16] }), g = beatGrid(song.audio, RATE);
+  const L = listenFor(g, snap(g, song.bar(18)), 4), learnt = learnMoment(song.audio, RATE, L);
+  assert.ok(learnt.ok, learnt.problem);
+  const BLUE = [0, 60, 255];
+  const tracks = { under: { mode: 'normal' }, rows: [
+    { id: 'w', name: 'Whites', kind: 'white', muted: false, groups: [{ at: [8, 9, 10, 11, 12, 13, 14, 15], look: C.defaultLook('white', { zones: ['top'] }) }] },
+    { id: 'r', name: 'Blue', kind: 'recolour', muted: false, groups: [{ at: [0], look: { ...C.defaultLook('recolour'), for: 16, in: 0, out: 0,
+      paint: { top: { colour: BLUE, level: 100 }, middle: { colour: BLUE, level: 100 }, bottom: { colour: BLUE, level: 100 } } } }] }] };
+  const b = C.buildTracks({ tracks, drive: PL.makeDrive(defaultProfile('pulse')) });
+  assert.deepEqual(demoMissing(b.anim), []);
+  assert.equal(b.layers, 2, 'a tint and one white pulse played again 7 times');
+  const moment = { print: learnt.print, delayMs: 0, repeat: 'first' };
+  const colours = { red: P.DEFAULTS.red, orange: P.DEFAULTS.orange, white: P.DEFAULTS.white };
+  const { st } = hear(song.audio, 'club', 5);
+  const run = (show) => new DriveShow(show, { colours }).run(st);
+  const withIt = run(demoShow([{ moment, animation: b.recipe }])), without = run(demoShow([]));
+  assert.equal(withIt.plays.length, 1);
+  const from = withIt.plays[0].block;
+  const px = (r, i, k) => [...r.leds.subarray(i * 24 + k * 3, i * 24 + k * 3 + 3)];
+  let blue = 0, flashes = 0, was = false;
+  for (let i = from + 2; i < from + 425; i++) {   // (16 beats at 174 BPM: ~431 blocks)
+    for (const k of [0, 1, 2, 3, 6, 7]) { const c = px(withIt, i, k); if (c[2] > 0 && c[0] === 0 && c[2] >= c[1]) blue++; else assert.fail(`LED ${k + 1} should be blue in block ${i - from}: ${px(withIt, i, k)} (without: ${px(without, i, k)})`); }
+    const top = px(withIt, i, 4), on = top[0] > 150 && top[1] > 150;
+    if (on && !was) flashes++;
+    was = on;
+  }
+  assert.ok(blue > 2000);
+  assert.equal(flashes, 8, 'eight white flashes at the top');
+});

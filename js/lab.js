@@ -275,6 +275,7 @@ export function makeAnimation(recipe, name = recipe.name) {
   if (anim.custom) out.custom = anim.custom;
   if (recipe.layers !== undefined) out.layers = recipe.layers;
   if (recipe.steps !== undefined) out.steps = recipe.steps;
+  if (recipe.tracks !== undefined) out.tracks = recipe.tracks;   // Light cues' timeline (R10b)
   return out;
 }
 
@@ -284,7 +285,7 @@ const inline = (v) => (Array.isArray(v) ? `[${v.map(inline).join(', ')}]`
   : v && typeof v === 'object' ? `{ ${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${inline(x)}`).join(', ')} }`
   : JSON.stringify(v));
 export function recipeText(recipe) {
-  const head = RECIPE_KEYS.filter((k) => !['custom', 'notes', 'layers', 'steps'].includes(k) && recipe[k] !== undefined).map((k) => `${JSON.stringify(k)}: ${inline(recipe[k])}`);
+  const head = RECIPE_KEYS.filter((k) => !['custom', 'notes', 'layers', 'steps', 'tracks'].includes(k) && recipe[k] !== undefined).map((k) => `${JSON.stringify(k)}: ${inline(recipe[k])}`);
   const parts = [`  ${head.join(', ')}`];
   if (recipe.notes !== undefined) parts.push(`  "notes": ${inline(recipe.notes)}`);
   if (recipe.custom !== undefined) parts.push(`  "custom": ${inline(recipe.custom)}`);
@@ -298,6 +299,7 @@ export function recipeText(recipe) {
     });
     parts.push(`  "steps": [\n${steps.join(',\n')}\n  ]`);
   }
+  if (recipe.tracks !== undefined) parts.push(`  "tracks": ${JSON.stringify(recipe.tracks)}`);   // (one line: Light cues reads it)
   return `{\n${parts.join(',\n')}\n}\n`;
 }
 
