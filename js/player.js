@@ -64,7 +64,8 @@ export const MOVES = {
 // Pulse engine 2 has no room for these three (Jonny, 22 Oct 2026): a recipe for a Pulse can't use them.
 export const PULSE_MOVES = Object.keys(MOVES).filter((m) => !MOVES[m].notOnPulse);
 const MOVE_BY_ID = Object.fromEntries(Object.entries(MOVES).flatMap(([k, m]) => [[m.id, k], ...(m.colourId ? [[m.colourId, k]] : [])]));
-const MAX_LAYERS = 15, MAX_HITS = 40;
+export const MAX_LAYERS = 15;   // a recipe's most layers: the header's 4 bits
+const MAX_HITS = 40;
 export const MAX_AGAIN = 64;   // repeats of one layer (R10c): each is 1-2 bytes, and the drive walks them every frame
 const AGAIN_ID = 15;           // in the bytes: a layer that plays again starts with this, then its times
 
@@ -154,7 +155,9 @@ function normRecolour(v, over, customs) {
 
 // The canonical recipe: steps flattened into layers with absolute `at`, every setting filled
 // in and rounded to what the bytes hold. pack() and unpack() agree on this form exactly.
-export function normalise(recipe) {
+// most: the most layers it may have (15: what the bytes hold). Light cues lifts it to show a
+// timeline that's still too big for a drive, before it's squeezed (js/squeeze.js).
+export function normalise(recipe, { most = MAX_LAYERS } = {}) {
   if (!isObj(recipe)) throw new RecipeError('A recipe is an object like { "type": "animation", "layers": [...] }.');
   if (recipe.type !== undefined && recipe.type !== 'animation') fail('Recipe', `"type" must be "animation" (got ${JSON.stringify(recipe.type)}).`);
   for (const k of Object.keys(recipe)) if (!RECIPE_KEYS.includes(k)) fail('Recipe', `"${k}" isn't part of a recipe${didYouMean(k, RECIPE_KEYS, { ...LIKELY, ...RECIPE_LIKELY })}. A recipe has ${RECIPE_KEYS.join(', ')}.`);
@@ -198,7 +201,7 @@ export function normalise(recipe) {
     stepAt += s.for;
   });
   if (!flat.length) fail('Recipe', 'it has no layers. Add "layers": [ ... ] (or "steps" for a one-shot).');
-  if (flat.length > MAX_LAYERS) fail('Recipe', `it has ${flat.length} layers; the most is ${MAX_LAYERS}.`);
+  if (flat.length > most) fail('Recipe', `it has ${flat.length} layers; the most is ${MAX_LAYERS}.`);
   const out = { type: 'animation', name: String(recipe.name || 'Untitled'), board, timing, once, layers: [] };
   if (over) out.over = true;
   if (recolour) out.recolour = recolour;
@@ -377,9 +380,10 @@ function getTime(b, p) { const x = b[p.i++]; return x < 128 ? x : ((x & 127) << 
 const mask = (leds) => leds.reduce((m, n) => m | (1 << (n - 1)), 0);
 const unmask = (m) => [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => m & (1 << (n - 1)));
 
-export function pack(recipe) {
-  const a = normalise(recipe), step = STEP[a.timing], hs = HIT_STEP[a.timing];
-  const out = [a.layers.length | (a.timing === 'beats' ? 16 : 0) | (a.once ? 32 : 0) | (a.custom ? 64 : 0) | (a.over ? 128 : 0)];
+// (most: as normalise's. Past 15 layers the bytes are only good for counting: a drive reads 4 bits.)
+export function pack(recipe, { most = MAX_LAYERS } = {}) {
+  const a = normalise(recipe, { most }), step = STEP[a.timing], hs = HIT_STEP[a.timing];
+  const out = [(a.layers.length & 15) | (a.timing === 'beats' ? 16 : 0) | (a.once ? 32 : 0) | (a.custom ? 64 : 0) | (a.over ? 128 : 0)];
   if (a.custom) { out.push(a.custom.length); for (const c of a.custom) out.push(...c); }
   if (a.over) {
     const re = a.recolour || {}, slots = [1, 2, 3, 4].filter((k) => re[k]);
@@ -784,8 +788,8 @@ export const steadyMusic = (ms, bpm = 174) => {
 // under: the normal look (a loop) under a section that plays "over" it, as on the drive, started
 // at underFrom ms (it carries on after the moment ends).
 export class Show {
-  constructor({ sections, drive, colours, brightness = 255, music = null, bpm = 174, under = null, underFrom = 0 }) {
-    this.sections = sections.map((s) => normalise(s));
+  constructor({ sections, drive, colours, brightness = 255, music = null, bpm = 174, under = null, underFrom = 0, most = MAX_LAYERS }) {
+    this.sections = sections.map((s) => normalise(s, { most }));
     this.drive = drive; this.palette = palette(colours); this.brightness = brightness;
     this.music = music || ((ms) => steadyMusic(ms, bpm));
     this.under = under ? normalise(under) : null; this.underFrom = underFrom;

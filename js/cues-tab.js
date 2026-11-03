@@ -37,6 +37,7 @@ export function initLightCues({ $, el, state, tab }) {
   let start = 0;              // s in the song where the animation starts (on a beat)
   let tracks = C.emptyTracks();
   let built = null, show = null, buildError = null;   // C.buildTracks()'s result, the drive's show
+  let costs = {};             // each row's id -> the layers of animation it makes (C.rowLayers)
   let heard = { key: null };  // the song as the drive hears it around the timeline (hear())
   let offers = [], offerCues = [];   // taps that could be one "on every kick/snare" effect
   let look = null;            // a Show whose normal look (underLevels) is the drive's ambient, as heard
@@ -148,11 +149,12 @@ export function initLightCues({ $, el, state, tab }) {
   }
 
   // ---------------------------------------------------------------- the animation
+  // (most: Infinity: a timeline still too big for a drive plays here too, so you can see it before trimming it)
   const showOf = (anim, h) => new Show({ sections: [anim], under: pulseAmbient(tab.settings('pulse')), underFrom: h.underFrom,
-    drive: drive(), colours: tab.settings('pulse'), brightness: tab.settings('pulse').brightness, music: h.music });
+    drive: drive(), colours: tab.settings('pulse'), brightness: tab.settings('pulse').brightness, music: h.music, most: Infinity });
   const hasClips = () => tracks.rows.some((r) => r.groups.length);
   function rebuild() {
-    built = null; show = null; look = null; buildError = null; offers = [];
+    built = null; show = null; look = null; buildError = null; offers = []; costs = {};
     tracks.under = controlsUnder();
     if (song) {
       let h = null;
@@ -163,7 +165,9 @@ export function initLightCues({ $, el, state, tab }) {
           try {
             built = C.buildTracks({ name: $('cqName').value.trim() || 'Light cues', tracks, drive: drive() });
             show = showOf(built.anim, h);
+            buildError = C.tooManyText(built);
           } catch (e) { buildError = e.message; }
+          costs = C.rowLayers(tracks, drive());
           offerCues = C.tracksCues(tracks);
           offers = C.foldOffers(offerCues, h.hits);
         }
@@ -172,7 +176,7 @@ export function initLightCues({ $, el, state, tab }) {
     if (sel && !clipAt(sel)) sel = null;
     if (chosen && rowIndex(chosen) < 0) chosen = null;
     status(); renderSheet(); inspector(); foldBox(); drawStrips(); draw();
-    for (const id of ['cqSave', 'cqToLab', 'cqCopy']) $(id).disabled = !built;
+    for (const id of ['cqSave', 'cqToLab', 'cqCopy']) $(id).disabled = !built || built.tooMany;
     $('cqUndo').disabled = !undoList.length;
     keep();
   }
@@ -185,7 +189,7 @@ export function initLightCues({ $, el, state, tab }) {
       const at = ri >= 0 ? ri : t.rows.push(C.newRow(t, h.kind)) - 1;
       C.place(t, at, h.at, lookFor(t.rows[at], h.kind, Math.max(C.STEP, b - h.at)));
     }
-    try { return showOf(C.buildTracks({ tracks: t, drive: drive() }).anim, heard); } catch { return show; }
+    try { return showOf(C.buildTracks({ tracks: t, drive: drive(), squeeze: false }).anim, heard); } catch { return show; }
   }
   // An effect placed on a row: the look of its last one there (so a layer keeps its settings), or a
   // new look from the "New effects" controls
@@ -300,23 +304,29 @@ export function initLightCues({ $, el, state, tab }) {
     buttons();
     const placed = C.clips(tracks).filter((c) => !tracks.rows[c.row].muted).length, n = tracks.rows.length;
     let info = '';
-    if (buildError) info = buildError;
-    else if (built) {
-      const len = C.tracksLength(tracks), fits = built.bytes <= C.DEMO_ROOM;
-      info = `${placed} effect${placed === 1 ? '' : 's'} on ${n} layer${n === 1 ? '' : 's'}, ${len} beats (${(len * beatS()).toFixed(1)} s): ${built.layers} layer${built.layers === 1 ? '' : 's'} of animation, ${built.bytes} bytes. `
-        + (fits ? `Fits on the demo engine (2.3) next to Poison's moment (room for one more moment, about ${C.DEMO_ROOM} bytes).`
-          : `Too big for the demo engine (2.3) next to Poison's moment (room for one more moment, about ${C.DEMO_ROOM} bytes): mute or delete some effects, link copies, or use fewer colours.`);
-    } else if (song) info = 'Nothing on the timeline yet. Press Record and play along, or add a layer and double-click on it.';
+    if (built) {
+      const len = C.tracksLength(tracks), by = built.bytes;
+      const room = built.tooMany ? buildError
+        : by <= C.DEMO_ROOM ? `Fits on the demo engine (2.3) next to Poison's moment (room for one more moment, about ${C.DEMO_ROOM} bytes).`
+          : by <= C.DEMO_ALONE ? `Too big to go next to Poison's moment on the demo engine (2.3: about ${C.DEMO_ROOM} bytes), but it fits as the demo's only song moment (about ${C.DEMO_ALONE}).`
+            : `Too big for the demo engine (2.3): about ${C.DEMO_ROOM} bytes next to Poison's moment, ${C.DEMO_ALONE} as its only moment. Mute or delete some effects, link copies, or use fewer colours.`;
+      info = `${placed} effect${placed === 1 ? '' : 's'} on ${n} layer${n === 1 ? '' : 's'}, ${len} beats (${(len * beatS()).toFixed(1)} s): ${built.layers} layer${built.layers === 1 ? '' : 's'} of animation, ${by} bytes. ${room}`;
+    } else if (buildError) info = buildError;
+    else if (song) info = 'Nothing on the timeline yet. Press Record and play along, or add a layer and double-click on it.';
     $('cqInfo').textContent = info;
     $('cqInfo').classList.toggle('warn', !!buildError || (built && built.bytes > C.DEMO_ROOM));
-    // the meter: layers of animation (15 at most) and bytes on the demo
+    // the meter: layers of animation (15 at most) and bytes on the demo, after squeezing
     const lay = built ? built.layers : 0, by = built ? built.bytes : 0;
     $('cqLayersText').textContent = `${lay} of ${C.MAX_LAYERS}`;
     $('cqBytesText').textContent = `${by} of ${C.DEMO_ROOM}`;
     $('cqLayersBar').style.width = `${Math.min(100, (lay / C.MAX_LAYERS) * 100)}%`;
     $('cqBytesBar').style.width = `${Math.min(100, (by / C.DEMO_ROOM) * 100)}%`;
     $('cqBytesBar').classList.toggle('over', by > C.DEMO_ROOM);
-    $('cqLayersBar').classList.toggle('over', /layers of animation/.test(buildError || ''));
+    $('cqLayersBar').classList.toggle('over', !!(built && built.tooMany));
+    const sq = built && (built.before.layers > built.layers || built.before.bytes > built.bytes);
+    $('cqSqueeze').hidden = !sq;
+    if (sq) $('cqSqueeze').replaceChildren('Squeezed for the drive: ', el('b', { text: `${built.before.layers} → ${built.layers} layers, ${built.before.bytes} → ${built.bytes} bytes` }),
+      '. Effects that are the same at other times play as one layer again, and the layers are in the order that takes the fewest bytes. The drive shows exactly the same (checked frame by frame).');
     const h = heard.hits;
     $('cqHeard').textContent = song && h
       ? `The song as the drive hears it in the simulated ${song.roomName || 'club'} (the room picked in Song moments): ${h.kick.filter((b) => b >= 0 && b < viewBeats()).length} kicks and ${h.snare.filter((b) => b >= 0 && b < viewBeats()).length} snares in these ${viewBeats() / 4} bars. The drive plays the effects on its own beat clock, so they can land a little off the song's grid.`
@@ -393,7 +403,9 @@ export function initLightCues({ $, el, state, tab }) {
       if (n && !confirm(`Delete the layer "${r.name}" and its ${n} effect${n === 1 ? '' : 's'}?`)) return;
       change(() => { tracks.rows.splice(ri, 1); sel = null; if (chosen === r.id) chosen = null; });
     });
-    const head = el('div', { class: 'cq-head' }, handle, name, mute, up, down, del);
+    const nl = costs[r.id] || 0;
+    const cost = el('span', { class: `cq-cost${nl >= 4 ? ' big' : ''}`, text: `${nl}`, title: costText(r, nl), 'aria-label': costText(r, nl) });
+    const head = el('div', { class: 'cq-head' }, handle, name, cost, mute, up, down, del);
     head.addEventListener('click', (e) => { if (e.target === head || e.target === handle) chooseRow(r.id); });
     rowDrag(handle, ri);
     const lane = el('div', { class: 'cq-lane', style: `width:${w}px`, 'aria-label': `${r.name}: double-click to put ${k.name.toLowerCase()} there` });
@@ -405,6 +417,13 @@ export function initLightCues({ $, el, state, tab }) {
       putOn(ri, b);
     });
     return el('div', { class: `cq-row${r.muted ? ' muted' : ''}${chosen === r.id ? ' chosen' : ''}`, 'data-row': String(ri) }, head, lane);
+  }
+  // what a row's tag means: how many layers of animation it makes, and why
+  function costText(r, nl) {
+    if (r.muted) return 'Muted: no layers of animation.';
+    const why = { recolour: ' A Recolour is up to 3 for each colour it uses (fade in, hold, fade out).', white: ' A white pulse that comes in is 2 (in, then out); one with a sweep is 2.' }[r.kind] || '';
+    const sets = r.groups.length;
+    return `Makes ${nl} layer${nl === 1 ? '' : 's'} of animation (of the ${C.MAX_LAYERS} a drive plays, before squeezing).${why}${sets > 1 ? ` It has ${sets} different looks: each is layers of its own (linked copies of one look share them).` : ''}`;
   }
   function chooseRow(id, keep = false) {
     const was = chosen;
@@ -621,7 +640,31 @@ export function initLightCues({ $, el, state, tab }) {
       cv.style.width = `${w}px`;
       stripOn(cv, span, fn);
     }
+    drawWave(w);
     drawHits(w);
+  }
+  // the song's waveform over the timeline (as in Song moments: each pixel the loudest and quietest
+  // sample there, and brighter, how loud it is on average), with the bars; before the start and
+  // after the song's end it's empty
+  function drawWave(wCss) {
+    const cv = $('cqWave'), dpr = window.devicePixelRatio || 1;
+    cv.style.width = `${wCss}px`;
+    const w = Math.max(1, Math.min(MAX_STRIP_PX, Math.round(wCss * dpr))), hgt = Math.max(1, Math.round(cv.clientHeight * dpr));
+    cv.width = w; cv.height = hgt;
+    const g = cv.getContext('2d'), n = wCss / ppb(), a = song.audio, rate = song.rate;
+    const X = (b) => Math.round((b / n) * w), mid = hgt / 2, half = hgt / 2 - 2 * dpr;
+    for (let bar = 0; bar < n / 4; bar++) { g.fillStyle = 'rgba(241,234,227,0.16)'; g.fillRect(X(bar * 4), 0, 1, hgt); }
+    if (!song.peak) { let p = 0; for (let i = 0; i < a.length; i += 7) p = Math.max(p, Math.abs(a[i])); song.peak = p || 1; }
+    const k = half / song.peak, per = (n * beatS() * rate) / w, from = start * rate;
+    for (let x = 0; x < w; x++) {
+      const i0 = Math.max(0, Math.floor(from + x * per)), i1 = Math.min(a.length, Math.floor(from + (x + 1) * per));
+      if (i1 <= i0) continue;
+      let lo = 0, hi = 0, sq = 0, m = 0;
+      for (let i = i0, st = Math.max(1, Math.floor((i1 - i0) / 400)); i < i1; i += st, m++) { const v = a[i]; if (v < lo) lo = v; if (v > hi) hi = v; sq += v * v; }
+      const rms = Math.sqrt(sq / m);
+      g.fillStyle = '#7d726a'; g.fillRect(x, mid - hi * k, 1, Math.max(1, (hi - lo) * k));
+      g.fillStyle = 'rgba(241,234,227,0.55)'; g.fillRect(x, mid - rms * k, 1, Math.max(1, 2 * rms * k));
+    }
   }
   // like tab.stripOn, with the canvas no wider than MAX_STRIP_PX
   function stripOn(cv, len, frameFn) {

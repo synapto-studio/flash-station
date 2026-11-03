@@ -84,10 +84,15 @@ test('colours: the same one is kept once, at most 10, black is off', () => {
 
 test('at most 15 layers: cues that look the same are one (linked), each other one its own; about 7 to 13 bytes each', () => {
   const many = Array.from({ length: 16 }, (_, i) => cue('white', i, 0.5, { level: 40 + i }));   // all different
-  assert.throws(() => C.build({ cues: many, drive }), /one animation can have 15/);
+  // more than a drive takes: it still builds (to play on screen), but says so and can't be sent
+  const big = C.build({ cues: many, drive });
+  assert.equal(big.layers, 16);
+  assert.ok(big.tooMany);
+  assert.match(C.tooManyText(big), /it plays 15 layers of animation at most, and these are 16/);
+  assert.equal(C.tooManyText(C.build({ cues: many.slice(0, 15), drive })), null);
   assert.equal(C.build({ cues: many.slice(0, 15), drive }).anim.layers.length, 15, 'over the normal look: no layer for what\'s under');
   assert.equal(C.build({ cues: many.slice(0, 15), drive, under: { mode: 'dark' } }).anim.layers.length, 15);
-  assert.throws(() => C.build({ cues: many.slice(0, 15), drive, under: { mode: 'colour', colour: ORANGE, level: 20 } }), /one animation can have 15/);
+  assert.ok(C.build({ cues: many.slice(0, 15), drive, under: { mode: 'colour', colour: ORANGE, level: 20 } }).tooMany, 'a colour under them is a layer too');
   assert.equal(C.build({ cues: many.slice(0, 14), drive, under: { colour: ORANGE, level: 20 } }).anim.layers.length, 15);
   const same = C.build({ cues: Array.from({ length: 16 }, (_, i) => cue('white', i, 0.5)), drive });
   assert.equal(same.anim.layers.length, 1, '16 that look the same: one layer that plays again');

@@ -18,6 +18,7 @@
 // open as tracks (cuesToTracks): "Normal look in new colours" becomes a Recolour over their length.
 
 import { normalise, pack } from './player.js';
+import { squeeze } from './squeeze.js';
 
 export const MAX_LAYERS = 15;        // a recipe's most layers: what the placed effects become
 export const MAX_CUES = MAX_LAYERS;  // (R8, R9: one layer a cue)
@@ -30,10 +31,13 @@ export const isOver = (u) => underMode(u) === 'normal';
 export const LOOK_COLOURS = { 1: 'Red', 2: 'Orange' };
 const HIT_LOUD = 60; // dB: kick and snare cues flash whenever the drive hears them (it recognised the song)
 export const STEP = 1 / 16;          // the recipe's finest time: 1/16 of a beat
-// Room on the demo engine for one more song moment's animation next to Poison's (firmware demo 2.3,
-// R10c, 30 Oct 2026: 269 bytes of the show free, less the moment's print, 96, and its delay and
-// flags, 7). 237 on 2.2 (R9b); 2.3's repeats took a page of it.
-export const DEMO_ROOM = 166;
+// Room on the demo engine (firmware demo 2.3, measured with its build tools, 3 Nov 2026): its
+// show has 576 bytes; the heights and normal look take 73, and each song moment its print (96 for
+// 4 bars), delay and flags (7) and its animation. Next to Poison's moment (DJ orange to green 8,
+// 118 bytes) there are 282 free: one more moment with an animation up to 179 bytes. A moment on its
+// own on the demo can have up to 400. (Both of today's, Poison and Sleep Forever, leave 50 free.)
+export const DEMO_ROOM = 179;
+export const DEMO_ALONE = 400;
 
 // key: what to press. colour: whether the effect has a colour of its own. tap: its length in beats
 // when the key is only tapped (held longer, it lasts as long as the key is held). shape: it can
@@ -250,7 +254,7 @@ export function tracksRecipe({ name = 'Light cues', tracks, drive, notes }) {
     }
   }
   if (!placed) throw new Error('Nothing to play yet: place an effect on a layer (or unmute one).');
-  if (layers.length > MAX_LAYERS) throw new Error(`These effects are ${layers.length} layers of animation; one animation can have ${MAX_LAYERS}. Mute or delete some, or use linked copies (one layer however many) instead of separate ones.`);
+  // (more than 15 layers is allowed here: buildTracks squeezes them, then says if it's still too many)
   const recipe = { type: 'animation', name, board: 'pulse', timing: 'beats', once: true };
   if (over) recipe.over = true;
   const onWhat = { normal: 'the normal look', dark: 'dark', colour: 'a colour' }[mode], n = live(tracks).length;
@@ -261,11 +265,39 @@ export function tracksRecipe({ name = 'Light cues', tracks, drive, notes }) {
   return recipe;
 }
 
-// The recipe checked and packed: { recipe, anim (normalised), bytes, layers (how many) }.
-export function buildTracks(opts) {
-  const recipe = tracksRecipe(opts);
-  const anim = normalise(recipe);
-  return { recipe, anim, bytes: pack(recipe).length, layers: anim.layers.length };
+// How many layers of animation each row's effects make, before squeezing (rows[i].id -> count):
+// a Recolour is up to 3 for each colour (fade in, hold, fade out), a white pulse that comes in 2...
+// Linked copies are in the same layers. Muted rows make none.
+export function rowLayers(tracks, drive) {
+  const ctx = { z: zones(drive), slotOf: () => 6, over: isOver(tracks.under), u: 0, uL: 0 };
+  const out = {};
+  for (const r of tracks.rows) {
+    let n = 0;
+    if (!r.muted) for (const g of r.groups) { try { if (g.at.length) n += effectLayers(r.kind, g.look, ctx).length; } catch {} }
+    out[r.id] = n;
+  }
+  return out;
+}
+
+// The recipe checked, squeezed for the drive (js/squeeze.js: the same light in every frame, in
+// fewer layers and bytes) and packed: { recipe, anim (normalised), bytes, layers (how many),
+// before: { layers, bytes } (as built, before squeezing), tooMany (more layers than a drive takes:
+// anim still plays on screen, but the recipe can't go to a drive) }. squeeze: false (while keys
+// are held) skips it: the same frames, sooner.
+export function buildTracks({ squeeze: sq = true, ...opts }) {
+  const raw = tracksRecipe(opts);
+  const s = sq ? squeeze(raw, { drive: opts.drive }) : null;
+  const recipe = s ? s.recipe : raw;
+  const anim = s ? s.anim : normalise(raw, { most: Infinity });
+  const bytes = s ? s.bytes : pack(raw, { most: Infinity }).length;
+  const before = s ? s.before : { layers: anim.layers.length, bytes };
+  return { recipe, anim, bytes, layers: anim.layers.length, before, tooMany: anim.layers.length > MAX_LAYERS, failed: !!(s && s.failed) };
+}
+// Why it can't go to a drive yet, in words (null: it can).
+export function tooManyText(built) {
+  if (!built || !built.tooMany) return null;
+  const squeezed = built.before.layers > built.layers ? `, even squeezed (from ${built.before.layers})` : '';
+  return `Too many for a drive: it plays ${MAX_LAYERS} layers of animation at most, and these are ${built.layers}${squeezed}. Mute or delete some (each layer's tag says how many it makes), or make copies of one effect linked (Alt-drag, or Add copies): a linked copy is about a byte, a separate one a whole layer.`;
 }
 
 // R8, R9's cues: as tracks, then the recipe.
