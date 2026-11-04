@@ -7,7 +7,8 @@
 //   routines/   routines (.json)
 //   palettes/   saved colour sets (.json)
 //   drives/     the drive register, one .json per drive (P-0007.json)
-//   casings/    drive profiles (.json: LED count, groups, LED positions); CAD models later
+//   casings/    drive profiles (.json: LED count, groups, LED positions) and 3D casing models
+//               (.casing, from the firmware repo's casing/tools/stl_to_web.py; a profile names its model)
 //   animations/ animation recipes from the Animation lab (.json, docs/ANIMATION-FORMAT.md)
 //   songs/      song clips for song moments (.mp3, .wav ...): they stay on this computer
 //   moments/    song moments (.json, js/moments.js): what a Pulse listens for and what it plays
@@ -17,7 +18,8 @@ import { readEngine } from './engines.js';
 import { isPalette, paletteFileName } from './palettes.js';
 import { isPhaseFile, phaseFileName } from './phases.js';
 import { isRoutine, routineFileName } from './routines.js';
-import { isProfile, profileFileName, defaultProfile } from './profiles.js';
+import { isProfile, profileFileName, defaultProfile, isModelName } from './profiles.js';
+import { readCasing } from './casing-model.js';
 import { isAnimation, animationFileName, makeAnimation, recipeText } from './lab.js';
 import { isMoment, momentFileName, AUDIO_TYPES } from './moments.js';
 
@@ -245,6 +247,27 @@ export class Library {
     if (!isProfile(profile)) throw new Error('That drive profile is not complete.');
     const { estimate, ...clean } = profile; // the estimate flag belongs to the built-in default only
     await this.writeJson('casings', profileFileName(clean), clean);
+  }
+
+  // 3D casing models (.casing files in casings/, next to the profiles). Returns the file names.
+  async casingModels() {
+    return (await this.store.list('casings')).filter(isModelName);
+  }
+
+  // A casing model, read (js/casing-model.js). Throws a sentence saying what to do.
+  async readCasingModel(name) {
+    if (!(await this.casingModels()).includes(name)) throw new Error(`The 3D model ${name} isn't in the library's casings folder. Copy it there (from the firmware repo's casing/out/), or add it in Drive profile.`);
+    return readCasing(await this.store.readBytes('casings', name));
+  }
+
+  // Copies a casing model file into casings/. Checks it first; the same name replaces it.
+  // bytes: an ArrayBuffer or Uint8Array of the file as it came.
+  async addCasingModel(name, bytes) {
+    if (!isModelName(name)) throw new Error(`${name} isn't a casing model. Its name ends in .casing (like sota-pro-3.0_model2.casing).`);
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const model = readCasing(data);   // throws if it isn't one
+    await this.store.write('casings', name, data);
+    return model;
   }
 
   // Animations (animations/ folder): recipes from the Animation lab. An "any" animation is listed

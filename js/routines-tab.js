@@ -2,14 +2,17 @@
 // same maths as the firmware (js/preview-core.js, js/preview-pulse.js). No audio, no hardware.
 // Pulse plays a built-in drum and bass demo through the simulated mic. Next to today's engine,
 // the new player (js/player.js) plays the same look rebuilt as recipes (js/animations.js). The
-// Animation lab (js/lab-tab.js) plays recipes pasted from a Claude session.
+// Animation lab (js/lab-tab.js) plays recipes pasted from a Claude session. When the drive profile
+// names a casing model, the preview can show the drive in 3D (js/drive-3d.js) instead of the drawing.
 
 import * as core from './preview-core.js';
 import * as pulse from './preview-pulse.js';
 import { makePalette, applyPalette } from './palettes.js';
 import { PHASES, makePhaseFile, applyPhaseFile, toEngineNames } from './phases.js';
 import { ROUTINE_PHASES, makeRoutine, engineToPreview } from './routines.js';
-import { defaultProfile, makeProfile, drawnLeds, groupOf } from './profiles.js';
+import { defaultProfile, makeProfile, drawnLeds, groupOf, isModelName } from './profiles.js';
+import { readCasing } from './casing-model.js';
+import { Drive3D } from './drive-3d.js';
 import { resolveRoutine } from './library.js';
 import { Show, makeDrive, pack } from './player.js';
 import { coreEngine, coreDrift, pulseStartup, pulseAmbient, heartbeat, heartbeatToday, pulseMusic } from './animations.js';
@@ -67,6 +70,7 @@ export function initRoutinesTab({ $, el, state }) {
   function buildBoard() {
     buildBoardIn($('rtBoard'), lensEls);
     buildBoardIn($('rtBoard2'), lensEls2);
+    update3d();
     playerShow = null;
     if (lab) lab.refresh();
     if (moments) moments.reload();
@@ -211,10 +215,108 @@ export function initRoutinesTab({ $, el, state }) {
   function draw() {
     const len = length();
     if (t > len) t = 0;
-    light(lensEls, frameAt(t));
-    light(lensEls2, playerFrameAt(t));
+    if (D3.on) {
+      if (D3.seen) {
+        D3.views[0].setPixels(frameAt(t)); D3.views[0].render();
+        D3.views[1].setPixels(playerFrameAt(t)); D3.views[1].render();
+      }
+    } else {
+      light(lensEls, frameAt(t));
+      light(lensEls2, playerFrameAt(t));
+    }
     $('rtClock').textContent = `${(t / 1000).toFixed(2)} s`;
     $('rtScrub').value = String(Math.round((t / len) * 1000));
+  }
+
+  // ---- the drive in 3D (js/drive-3d.js), when the drive profile names a casing model: a .casing
+  // file in the library's casings/ folder (made by the firmware repo's casing/tools/stl_to_web.py).
+  // Same LED values as the drawing, the back LEDs too; both drives turn together; the cap is off, as
+  // when it's plugged in.
+  const D3 = { want: true, on: false, seen: true, views: [], models: new Map(), opened: new Set(), turn: 0 };
+  const viewNote = (text) => { $('rtViewNote').textContent = text; };
+  function modelFor(name) {   // a Promise of the read model, read once
+    if (!D3.models.has(name)) {
+      const p = state.library ? state.library.readCasingModel(name)
+        : Promise.reject(new Error(`The 3D model ${name} isn't open: choose the library folder (Library tab) with it in casings/, or add the file under Drive profile.`));
+      D3.models.set(name, p);
+      p.catch(() => { if (D3.models.get(name) === p) D3.models.delete(name); });   // try again next time
+    }
+    return D3.models.get(name);
+  }
+  function paint3d(on) {   // true when it changed
+    if (D3.on === on && $('rt3d').hidden === !on) return false;
+    D3.on = on;
+    $('rtView-flat').setAttribute('aria-checked', String(!on));
+    $('rtView-3d').setAttribute('aria-checked', String(on));
+    $('rtBoard').hidden = $('rtBoard2').hidden = on;
+    $('rt3d').hidden = $('rt3d2').hidden = !on;
+    $('rt3dViews').hidden = !on;
+    return true;
+  }
+  function makeViews(model) {
+    const views = [];
+    try {
+      for (const c of [$('rt3d'), $('rt3d2')]) views.push(new Drive3D(c, { model, profile: profile[family], background: '#121010', inPage: true }));
+    } catch (e) { views.forEach((v) => v.dispose()); throw e; }
+    // turn and zoom together: each copies the other once its own handler has moved it
+    const link = (from, to) => {
+      const copy = () => {
+        if (to.yaw === from.yaw && to.pitch === from.pitch && to.zoom === from.zoom) return;
+        to.yaw = from.yaw; to.pitch = from.pitch; to.zoom = from.zoom; to.render();
+      };
+      for (const ev of ['pointermove', 'wheel', 'dblclick']) from.canvas.addEventListener(ev, copy);
+    };
+    link(views[0], views[1]); link(views[1], views[0]);
+    // not drawn while scrolled off the screen (the lab and the rest of the tab are below)
+    new IntersectionObserver((seen) => {
+      const was = D3.seen;
+      D3.seen = seen.some((e) => e.isIntersecting);
+      if (D3.seen && !was && D3.on) draw();   // paused: show where it is now
+    }).observe($('rt3d'));
+    D3.views = views;
+  }
+  // Shows what the profile and the Drawing / 3D choice ask for. Called whenever either changes.
+  async function update3d() {
+    const turn = ++D3.turn, name = profile[family].model;
+    $('rtView-3d').disabled = !name;
+    $('rtView-3d').title = name ? '' : 'Needs a 3D model: see Drive profile below';
+    if (!name || !D3.want) {
+      viewNote(name ? `The drawing. 3D shows the drive in its real casing (${name}).`
+        : '3D needs the casing\'s model: under Drive profile, add the model file (like sota-pro-3.0_model2.casing) or pick it, then save the profile.');
+      if (paint3d(false)) draw();
+      return;
+    }
+    let model;
+    try {
+      if (!D3.models.has(name)) viewNote(`Opening ${name}…`);
+      model = await modelFor(name);
+      if (turn !== D3.turn) return;
+      if (!D3.views.length) { paint3d(true); makeViews(model); }
+      for (const v of D3.views) {
+        if (v.model !== model) v.setModel(model, profile[family]);
+        else v.setProfile(profile[family]);
+        v.show('cap', false);
+        v.fit(true);
+      }
+    } catch (e) {
+      if (turn !== D3.turn) return;
+      viewNote(`${e.message} Showing the drawing.`);
+      if (paint3d(false)) draw();
+      return;
+    }
+    paint3d(true);
+    const what = `${model.name || name}${model.model ? `, model ${model.model}` : ''}`;
+    viewNote(`3D: ${what}, lit by the same LED values as the drawing (the back LEDs too). Drag to turn both drives, pinch or ⌘/Ctrl + scroll to zoom, double-click to go back. The cap is off, as when it's plugged in. Simulated: how the light spreads through the casing is a guess until it's compared with a real drive.${D3.views[0].hdr ? '' : ' This computer\'s graphics draw it without the soft haze round bright LEDs.'}`);
+    draw();
+  }
+  async function loadModels() {
+    const sel = $('rtProfModel'), cur = profile[family].model;
+    const names = new Set(state.library ? await state.library.casingModels() : []);
+    for (const n of D3.opened) names.add(n);
+    if (cur) names.add(cur);   // the profile's own, even when the file is missing (the note says so)
+    sel.replaceChildren(el('option', { value: '', text: names.size ? 'None: the drawing' : 'None in the library yet' }));
+    [...names].sort().forEach((n) => sel.append(el('option', { value: n, text: n })));
+    sel.value = cur || '';
   }
 
   // ---- saved colour sets (library palettes/ folder)
@@ -291,6 +393,10 @@ export function initRoutinesTab({ $, el, state }) {
 
   // ---- drive profile (library casings/ folder): LED count, groups and each LED's position
   function profMsg(text) { $('rtProfMsg').textContent = text; }
+  // The saved profile picked last on each board, picked again next time (with its 3D model).
+  const PROF_KEY = 'synapto-routines-profile-';
+  const recallProfile = (f) => { try { return localStorage.getItem(PROF_KEY + f) || ''; } catch { return ''; } };
+  const rememberProfile = (f, name) => { try { localStorage.setItem(PROF_KEY + f, name); } catch {} };
   function buildProfileEditor() {
     const p = profile[family];
     const box = $('rtProfLeds');
@@ -309,7 +415,8 @@ export function initRoutinesTab({ $, el, state }) {
       };
       box.append(el('div', { class: 'rt-field' }, el('span', { text: `LED ${l.led}${g ? `, ${g}` : ''}` }), pos('x', 'across (mm)'), pos('y', 'above the plug (mm)')));
     }
-    $('rtProfNote').textContent = `${p.count} LEDs on this board. ${p.estimate ? 'These positions are estimates until you save a profile for the casing.' : ''} Across is mm from the centre (left is negative); above the plug is mm from the top of the USB A connector up towards the logo.`;
+    $('rtProfNote').textContent = `${p.count} LEDs on this board. ${p.estimate ? 'These positions are estimates until you save a profile for the casing.' : ''} Across is mm from the centre (left is negative); above the plug is mm from the top of the USB A connector up towards the logo. The 3D model is the casing's shape (a .casing file kept in the library's casings folder); the preview shows it in 3D.`;
+    loadModels().catch(() => {});
   }
   async function loadProfiles(pick) {
     const lib = state.library;
@@ -339,7 +446,7 @@ export function initRoutinesTab({ $, el, state }) {
     pulseDirty = true;
     if (f === 'pulse' && !pulseStage1) frameAt(0);
     note(); drawStrip(); draw(); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {});
-    loadProfiles().then(useProfile).catch(() => {});
+    loadProfiles(recallProfile(f)).then(useProfile).catch(() => {});
     if (lab) lab.reload();
   }
 
@@ -416,19 +523,60 @@ export function initRoutinesTab({ $, el, state }) {
       rtMsg(`Showing "${r.data.name}".`);
     } catch (e) { rtMsg(e.message); }
   });
-  $('rtProfSel').addEventListener('change', () => { profMsg(''); useProfile(); });
+  $('rtProfSel').addEventListener('change', () => { profMsg(''); rememberProfile(family, $('rtProfSel').value); useProfile(); });
   $('rtProfSave').addEventListener('click', async () => {
     try {
       const p = makeProfile(family, $('rtProfName').value, profile[family]);
       await state.library.saveProfile(p);
       $('rtProfName').value = '';
+      rememberProfile(family, p.name);
       await loadProfiles(p.name); useProfile();
       profMsg(`Saved "${p.name}"${state.library.saved ? '' : ' (demo library: lost when you close the page)'}. Put ${p.name} in the casing box when you initialise a drive to use it.`);
     } catch (e) { profMsg(e.message); }
   });
   $('rtRoom').addEventListener('change', () => { pulseStage1 = null; changed(); });
+  $('rtView-flat').addEventListener('click', () => { D3.want = false; update3d(); });
+  $('rtView-3d').addEventListener('click', () => { D3.want = true; update3d(); });
+  for (const b of $('rt3dViews').querySelectorAll('[data-view]')) b.addEventListener('click', () => D3.views.forEach((v) => v.view(b.dataset.view)));
+  $('rtProfModel').addEventListener('change', () => {
+    const name = $('rtProfModel').value;
+    if (name) { profile[family].model = name; D3.want = true; } else delete profile[family].model;
+    profMsg(name ? `Using ${name}. Save the drive profile to keep it with the casing.` : 'No 3D model: the preview shows the drawing.');
+    update3d();
+  });
+  $('rtProfModelFile').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let model;
+      if (state.library) model = await state.library.addCasingModel(file.name, bytes);
+      else {
+        if (!isModelName(file.name)) throw new Error('That isn\'t a casing model. Its name ends in .casing (like sota-pro-3.0_model2.casing).');
+        model = readCasing(bytes);
+        D3.opened.add(file.name);
+      }
+      D3.models.set(file.name, Promise.resolve(model));
+      profile[family].model = file.name;
+      D3.want = true;
+      await loadModels();
+      update3d();
+      profMsg(state.library
+        ? `${file.name} is in the library's casings folder${state.library.saved ? '' : ' (demo library: lost when you close the page)'}. Save the drive profile to keep it with the casing.`
+        : `${file.name} is open, but not kept: choose a library folder (Library tab) and add it again to keep it.`);
+    } catch (e) { profMsg(`${file.name}: ${e.message}`); }
+  });
 
-  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); loadProfiles(($('rtProfSel') || {}).value).catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); moments.reload(); cues.reload(); }); // the strip can't be sized while hidden
+  // the library may have been connected since: then the profile picked last time comes back
+  async function reloadProfiles() {
+    const before = $('rtProfSel').value;
+    await loadProfiles(before || recallProfile(family));
+    if (!before && $('rtProfSel').value) return useProfile();
+    await loadModels();
+    if (profile[family].model && D3.want && !D3.on) update3d();   // its file may be there now
+  }
+  $('t-routines').addEventListener('click', () => { drawStrip(); draw(); reloadProfiles().catch(() => {}); loadPalettes().catch(() => {}); loadPhaseFiles().catch(() => {}); loadRoutines().catch(() => {}); lab.reload(); moments.reload(); cues.reload(); }); // the strip can't be sized while hidden
   window.addEventListener('resize', () => { if (!$('p-routines').hidden) { drawStrip(); lab.redrawStrip(); moments.redraw(); cues.redraw(); } });
   lab = initAnimationLab({ $, el, state, tab: { family: () => family, setFamily, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, stripOn, light } });
   moments = initSongMoments({ $, el, state, tab: { family: () => family, settings: (f) => S[f], profile: () => profile[family], buildBoard: buildBoardIn, light } });

@@ -254,6 +254,17 @@ details.small > *:not(summary) { margin-top: 10px; }
 .rt-plug { position: absolute; left: 50%; transform: translateX(-50%); background: #8c857e; border-radius: 0 0 2px 2px; }
 .rt-lens { position: absolute; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 50%; background: #2a2624; border: 2px solid #d9d4cc33; }
 .rt-clock { text-align: right; font: 20px ui-monospace, Menlo, monospace; color: var(--paper); margin-top: 8px; }
+.rt-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.rt-foot .rt-clock { margin-left: auto; }
+.rt-3d-views { display: flex; flex-wrap: wrap; margin-top: 8px; }
+.rt-view { display: inline-flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; margin: -10px 0 14px; }
+.rt-view button { background: none; border: 0; color: var(--muted); font: inherit; padding: 6px 16px; cursor: pointer; }
+.rt-view button + button { border-left: 1px solid var(--edge); }
+.rt-view button[aria-checked='true'] { color: var(--paper); background: color-mix(in srgb, var(--resin) 16%, var(--shell)); box-shadow: inset 0 -2px 0 var(--resin); }
+.rt-view button:disabled { opacity: 0.45; cursor: not-allowed; }
+.rt-3d { display: block; width: 100%; height: 440px; border-radius: 8px; cursor: grab; user-select: none; -webkit-user-select: none; }
+.rt-3d:active { cursor: grabbing; }
+@media (max-width: 520px) { .rt-3d { height: 360px; } }
 .rt-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
 .rt-controls select { background: var(--shell-2); color: var(--paper); border: 1px solid var(--edge); border-radius: 6px; padding: 6px; }
 .rt-strip { width: 100%; height: 64px; border-radius: 6px; border: 1px solid var(--edge); background: #121010; display: block; }
