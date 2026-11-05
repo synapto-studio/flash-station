@@ -81,12 +81,19 @@ Jonny, next run: station 0.7 on the box (`station_0.7.uf2`), the Pulse A2 on pul
 Latest (28 Oct 2026, station 0.9): Pulse A2 recognised 7 of 7 (1 on pulsetest 1.12 sunset, 6 on 2.5), no phantom plug-ins. The 2.5 file was built before 1.12's one-copy ID and 8d's glow fade were merged in, so those still need a new engine 2 build. 8f is closed (5 Nov 2026): there will be no "2.6". Engine 2 gets a new name and number, and the two fixes go into that build (firmware repo roadmap task 12).
 
 ### 9. A public page (planning with Jonny, 5 Nov 2026; nothing built)
-Today's app is for Jonny (admin and development). A public page joins the Flash Station and a very basic Routines into one, with as little on it as possible. What Jonny asked for so far:
-- Background: a white radial gradient (strongest in the middle) that pulses in time with the box, with a faint grid over it.
+Today's app is for Jonny (admin and development). A public page joins the Flash Station and a very basic Routines into one, with as little on it as possible. **Decided so far (Jonny, 5 Nov 2026):**
+- For now it's **a new tab on this site** that acts as its own page; no new website yet.
+- Background: a white radial gradient (strongest in the middle) that pulses in time with the box, with a faint grid over it. **Later goal:** the box's own lights pulse with the screen too (a station firmware change).
 - The drive pops up on screen when it's plugged in (the 3D card, `js/card-3d.js`).
-- Tabs that open and close: **Song moments and light cues** (Pulse only), **Colour sets**, and **When it's plugged into a normal USB port** (the start-up look). Pulse gets all 3; Core gets the last 2.
-- A small 3-way switch: **Current / New / Both** (both = two drives side by side). It moves to New once anything is changed. The page shows the name of the current lighting and of the new one to be sent.
-Open questions are in that chat. The plan gets written here once they're answered.
+- Tabs that open and close: **Song moments and light cues** (Pulse only; shown, not hidden: build it as if for full working drives, probably Pulse B), **Colour sets** (a few presets, plus a simple, friendly way to make new ones), and **When it's plugged into a normal USB port** (the start-up look). Pulse gets all 3; Core gets the last 2.
+- A small 3-way switch: **Current / New / Both** (both = two drives side by side). It moves to New once anything is changed. The page shows the name of the current lighting and of the new one.
+- A **Flash** button, on the right (top or bottom: to decide).
+- Borrow from DJ, lighting and music-production apps throughout (e.g. their usual keyboard shortcuts).
+- Shown with two drives: a Pulse on **Pulse demo** (song moments, colours) and a second Pulse (routines, colour sets, in step with the screen's pulse).
+Still open (asked in that chat): whether it works without a box, lighting names, what the start-up tab lets people do, which engine the second Pulse runs, and what of the public repo should stay public.
+
+### 10. A Versions tab (admin, planning, 5 Nov 2026)
+Jonny wants the list of what exists and what's planned (drive models and casing releases, boards, engines, demos, station) on the admin website, not on GitHub, plus each drive's record (casing, board, memory stick, engine and lighting). The page's code is public; the contents must not be: they come from the library folder or the private firmware repo, never from this repo. How the site gets them is still to decide (asked in that chat).
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
