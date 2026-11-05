@@ -7,7 +7,7 @@ import { FAMILIES, checkBoard, initialiseBoard, explain, driveRecord } from './i
 import { buildInitImage, initImageToMem } from './engines.js';
 import { toHex } from './intelhex.js';
 import { encodeCard, driveLabel } from './idcard.js';
-import { Library, MemoryStore, rememberedFolder, reconnectFolder, pickFolder, folderAccessSupported, resolveRoutine } from './library.js';
+import { Library, MemoryStore, rememberedFolder, reconnectFolder, pickFolder, folderAccessSupported, resolveRoutine, CasingModels } from './library.js';
 import { demoEngines } from './demo.js';
 import { initFlashTab } from './flash-tab.js';
 import { initRoutinesTab } from './routines-tab.js';
@@ -28,6 +28,7 @@ const state = {
   moments: [],
   drives: [],
   checked: null,
+  casings: new CasingModels(() => state.library),   // 3D casing models open this session (both tabs)
   busy: false,
   sims: {},
 };

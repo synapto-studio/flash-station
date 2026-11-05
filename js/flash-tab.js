@@ -17,6 +17,7 @@ import {
 } from './station.js';
 import { encodeCard } from './idcard.js';
 import { DriveArt } from './drive-art.js';
+import { Card3D, REPORT_MS } from './card-3d.js';
 import { SimStation, SimDrive, SimCoreDrive } from './sim-station.js';
 import { WebSerialTransport, webSerialSupported, grantedPorts, onPlugged } from './serial.js';
 import { Library, MemoryStore, resolveRoutine } from './library.js';
@@ -34,6 +35,8 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
   const tellsSocket = () => !!fs.station && canTellSocket(fs.station.version);
   const emptyNote = (drive) => `The socket is empty. Plug ${drive ? drive.drive : 'the drive'} in, wait for its card, then send.`;
   const cardArt = new DriveArt($('fsCardArt'));
+  // the drive in 3D when its profile names a casing model (js/card-3d.js), else the drawing
+  const card3d = new Card3D({ card: $('fsCard'), canvas: $('fsCard3d'), art: cardArt, note: $('fsCard3dNote'), casings: state.casings, library: () => state.library });
 
   const KIND = { pulse: 'pulsetest', core: 'coretest' };
   const sendable = () => state.drives.filter((d) => KIND[d.family]).sort((a, b) => a.drive.localeCompare(b.drive));
@@ -219,15 +222,19 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
       if (check) dd.dataset.check = check;
       return [el('dt', { text: k }), dd];
     }));
-    const family = unknown ? unknown.family : d.family;
-    cardArt.setFamily(family === 'core' ? 'core' : 'pulse');
-    cardArt.steady(unknown ? null : d.settings);
+    const family = (unknown ? unknown.family : d.family) === 'core' ? 'core' : 'pulse';
+    // In step with the real drive from its plug-in (the box reports it a little after: plugAt),
+    // until something is sent to it; the steady colours when it was picked in the list.
+    const plugAt = fresh && !fs.busy && seen.plugAt != null ? seen.plugAt : null;
+    card3d.show({ family, drive: unknown ? null : d, engine: unknown ? null : engineOf(d), plugAt, inSocket: fresh, gone });
   }
 
   // Picks the drive the station heard and shows it in the card.
-  function identified(heard, how) {
+  // heardAt: performance.now() when the box reported a plug-in.
+  function identified(heard, how, heardAt = null) {
     const found = state.drives.find((d) => d.drive === heard.label) || null;
-    fs.seen = { label: heard.label, board: heard.board, family: heard.family, how, known: !!found };
+    const plugAt = heardAt == null ? null : heardAt - REPORT_MS[heard.family === 'core' ? 'core' : 'pulse'];   // when it went in
+    fs.seen = { label: heard.label, board: heard.board, family: heard.family, how, known: !!found, plugAt };
     if (found) {
       $('fsDrive').value = found.drive;
       remember(found.drive);
@@ -335,9 +342,10 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     let lastError = '';
     while (fs.station === st) {
       if (fs.busy) { await pause(200); continue; }
-      let bytes;
+      let bytes, heardAt;
       try {
         bytes = await st.wait(WAIT_MS);
+        heardAt = performance.now();
         lastError = '';
       } catch (e) {
         if (fs.station !== st) return;
@@ -373,7 +381,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
         const fp = heard.fingerprint == null ? '' : `, lighting fingerprint ${heard.fingerprint.toString(16).toUpperCase().padStart(4, '0')}`;
         said = `Plugged in: ${heard.label} (${heard.board})${fp}`;
         $('fsFindNote').textContent = '';
-        const found = identified(heard, 'plug');
+        const found = identified(heard, 'plug', heardAt);
         log(said);
         if (found && heard.fingerprint != null) await checkDrive(found, heard.fingerprint);
       }
@@ -554,6 +562,7 @@ export function initFlashTab({ $, el, log, state, setLibrary, refreshLibrary }) 
     const drive = selectedDrive(), engine = selectedEngine();
     fs.busy = true;
     fs.stop = false;
+    if (fs.seen) fs.seen.plugAt = null;   // the drive stops its plug-in look for the send
     refreshButtons();
     const event = { date: new Date().toISOString(), station: 'Flash Station', action, engine: engine ? engine.label : '' };
     let settings = null, img = null;

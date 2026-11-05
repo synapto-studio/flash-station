@@ -341,6 +341,37 @@ export class Library {
 }
 
 const LETTER_FAMILY = { P: 'pulse', C: 'core' };
+// The casing models open this session, shared by the Routines and Flash Station tabs: each one read
+// once (name → a Promise of the model, js/casing-model.js) from the library's casings/ folder, or kept
+// for this session when it was added with no library folder (opened). library: () => the Library or null.
+export class CasingModels {
+  constructor(library) {
+    this.library = library;
+    this.models = new Map();
+    this.opened = new Set();
+  }
+
+  has(name) { return this.models.has(name); }
+
+  // A Promise of the read model. Throws (rejects) a sentence saying what to do.
+  open(name) {
+    if (!this.models.has(name)) {
+      const lib = this.library();
+      const p = lib ? lib.readCasingModel(name)
+        : Promise.reject(new Error(`The 3D model ${name} isn't open: choose the library folder (Library tab) with it in casings/, or add the file under Routines → Drive profile.`));
+      this.models.set(name, p);
+      p.catch(() => { if (this.models.get(name) === p) this.models.delete(name); });   // try again next time
+    }
+    return this.models.get(name);
+  }
+
+  // A model just read (added in Drive profile). forSession: there's no library folder to keep it in.
+  keep(name, model, { forSession = false } = {}) {
+    this.models.set(name, Promise.resolve(model));
+    if (forSession) this.opened.add(name);
+  }
+}
+
 export const driveFamily = (f) => LETTER_FAMILY[f] || f;
 
 // A routine names one phase file per phase; each phase file holds settings for that phase.

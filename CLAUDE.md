@@ -41,8 +41,8 @@ When Jonny describes an animation, follow "Making an animation in a session" in 
 - `js/cues.js` Light cues (R8, R9, R10): a timeline of layers, each one effect (white pulse, shimmer, cut, fades, every kick/snare, Recolour…), linked copies played again (`again`), to a beat-timed recipe over the normal look; older saved cues open as tracks · `js/cues-tab.js` the Light cues timeline editor in the Routines tab (drag, resize, Alt-drag copy, mute, reorder, undo, the meter; the song through the simulated mic: normal look, kicks and snares, the drive)
 - `js/lab.js` Animation lab (R3): reads pasted recipes with plain errors, `animations/` files · `js/lab-tab.js` the lab in the Routines tab · `tools/animation-clip.mjs` preview clips
 - `js/lighting.js` the drive's lighting fingerprint (task 7): checked against the register, register corrected; what a Pulse engine 2 plays, named by contents
-- `js/main.js` UI · `js/drive-art.js` the drive drawing
-- `js/casing-model.js` reads a casing model (`.casing`, in the library's `casings/`; never committed here) · `js/drive-3d.js` the drive in 3D (WebGL2, no libraries): the Routines preview when the drive profile names a model. Both are twins of the firmware repo's `casing/web/`: change both
+- `js/main.js` UI · `js/drive-art.js` the drive drawing · `js/card-3d.js` the Flash Station drive card in 3D, playing what the drive plays from its plug-in (`stationLook`)
+- `js/casing-model.js` reads a casing model (`.casing`, in the library's `casings/`; never committed here) · `js/drive-3d.js` the drive in 3D (WebGL2, no libraries): the Routines preview and the Flash Station card when the drive profile names a model. Both are twins of the firmware repo's `casing/web/`: change both
 - `docs/ROADMAP.md` what to build next, in order, with how to check each part
 - `docs/STATION-PROTOCOL.md` the power-line protocol and the XIAO wiring
 - `docs/SONG-RECOGNITION.md` R1 results: can a Pulse recognise a moment in a song (go)
