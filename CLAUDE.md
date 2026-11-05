@@ -42,6 +42,7 @@ When Jonny describes an animation, follow "Making an animation in a session" in 
 - `js/lab.js` Animation lab (R3): reads pasted recipes with plain errors, `animations/` files · `js/lab-tab.js` the lab in the Routines tab · `tools/animation-clip.mjs` preview clips
 - `js/lighting.js` the drive's lighting fingerprint (task 7): checked against the register, register corrected; what a Pulse engine 2 plays, named by contents
 - `js/main.js` UI · `js/drive-art.js` the drive drawing
+- `js/casing-model.js` reads a casing model (`.casing`, in the library's `casings/`; never committed here) · `js/drive-3d.js` the drive in 3D (WebGL2, no libraries): the Routines preview when the drive profile names a model. Both are twins of the firmware repo's `casing/web/`: change both
 - `docs/ROADMAP.md` what to build next, in order, with how to check each part
 - `docs/STATION-PROTOCOL.md` the power-line protocol and the XIAO wiring
 - `docs/SONG-RECOGNITION.md` R1 results: can a Pulse recognise a moment in a song (go)

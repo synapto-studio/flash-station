@@ -230,12 +230,25 @@
           <button type="button" role="radio" id="rtFam-pulse" aria-checked="false"><strong>Pulse</strong><span>8 LEDs, follows the music</span></button>
         </div>
         <div class="rt-stage">
-          <div class="rt-pair">
-            <figure><figcaption>Today's engine</figcaption><div class="rt-board" id="rtBoard"></div></figure>
-            <figure><figcaption>New player, from a recipe</figcaption><div class="rt-board" id="rtBoard2"></div></figure>
+          <div class="rt-view" role="radiogroup" aria-label="How the drive is shown">
+            <button type="button" role="radio" id="rtView-flat" aria-checked="true">Drawing</button>
+            <button type="button" role="radio" id="rtView-3d" aria-checked="false" disabled>3D</button>
           </div>
-          <div class="rt-clock" id="rtClock">0.00 s</div>
+          <div class="rt-pair">
+            <figure><figcaption>Today's engine</figcaption><div class="rt-board" id="rtBoard"></div><canvas class="rt-3d" id="rt3d" hidden aria-label="The drive in 3D, today's engine"></canvas></figure>
+            <figure><figcaption>New player, from a recipe</figcaption><div class="rt-board" id="rtBoard2"></div><canvas class="rt-3d" id="rt3d2" hidden aria-label="The drive in 3D, new player"></canvas></figure>
+          </div>
+          <div class="rt-foot">
+            <div class="rt-3d-views" id="rt3dViews" hidden>
+              <button class="btn quiet" type="button" data-view="front">Front</button>
+              <button class="btn quiet" type="button" data-view="three-quarter">Three-quarter</button>
+              <button class="btn quiet" type="button" data-view="side">Side</button>
+              <button class="btn quiet" type="button" data-view="back">Back</button>
+            </div>
+            <div class="rt-clock" id="rtClock">0.00 s</div>
+          </div>
         </div>
+        <p class="note" id="rtViewNote" role="status"></p>
         <div class="rt-controls">
           <button class="btn" id="rtPlay" type="button">Pause</button>
           <button class="btn" id="rtRestart" type="button">Power on again</button>
@@ -461,6 +474,10 @@
         <h2>Drive profile</h2>
         <p class="note" id="rtProfNote"></p>
         <div class="rt-fields" id="rtProfLeds"></div>
+        <div class="rt-controls">
+          <label>3D model <select id="rtProfModel"></select></label>
+          <label class="btn sm-file">Add a 3D model file<input id="rtProfModelFile" type="file" accept=".casing"></label>
+        </div>
         <div class="rt-controls">
           <label>Saved <select id="rtProfSel"></select></label>
           <label>Casing <input id="rtProfName" type="text" maxlength="4" placeholder="SOTA" style="width:90px"></label>

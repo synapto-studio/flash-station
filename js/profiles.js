@@ -1,11 +1,12 @@
 // Drive profiles: how one casing is laid out. How many LEDs the board has, which LEDs work together
 // (groups), and where each LED sits from the USB plug up to the logo. Saved in the library's
 // casings/ folder, one file per casing and board (casings/sota-pulse.json). The Routines preview
-// draws the drive from the profile.
+// draws the drive from the profile, in 3D when the profile names a casing model.
 //
 //   { type: 'profile', name: 'SOTA', family: 'pulse', count: 8,
 //     groups: { bottom: [1, 2], middle: [3], top: [5] },
-//     leds: [{ led: 1, x: -3.5, y: 6.5 }, ...] }
+//     leds: [{ led: 1, x: -3.5, y: 6.5 }, ...],
+//     model: 'sota-pro-3.0_model2.casing' }       // optional: the 3D model, a file in casings/
 //
 // x is mm from the centre line (left is negative), y is mm above the top of the USB A connector,
 // so a bigger y is closer to the logo. LEDs on the far side of the board are left out until their
@@ -39,6 +40,9 @@ export function defaultProfile(family) {
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
+// A casing model's file name, as it sits in the library's casings/ folder (js/casing-model.js reads it).
+export const isModelName = (m) => typeof m === 'string' && /^[^/\\]+\.casing$/i.test(m) && !m.startsWith('.');
+
 export function isProfile(p) {
   if (!p || p.type !== 'profile' || !FAMILY_LEDS[p.family] || typeof p.name !== 'string' || !p.name.trim()) return false;
   if (!Number.isInteger(p.count) || p.count < 1 || p.count > 32) return false;
@@ -50,11 +54,12 @@ export function isProfile(p) {
     seen.add(l.led);
   }
   if (!p.groups || typeof p.groups !== 'object') return false;
+  if (p.model !== undefined && !isModelName(p.model)) return false;
   return Object.values(p.groups).every((g) => Array.isArray(g) && g.every(inRange));
 }
 
 // Checks and tidies a profile (used when saving). Throws a sentence saying what to fix.
-export function makeProfile(family, name, { count = FAMILY_LEDS[family], groups = {}, leds = [] } = {}) {
+export function makeProfile(family, name, { count = FAMILY_LEDS[family], groups = {}, leds = [], model } = {}) {
   if (!FAMILY_LEDS[family]) throw new Error(`Unknown board "${family}".`);
   const clean = String(name).trim();
   if (!clean) throw new Error('Give the casing a name, like SOTA.');
@@ -63,7 +68,9 @@ export function makeProfile(family, name, { count = FAMILY_LEDS[family], groups 
     groups: Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, [...v]])),
     leds: leds.map((l) => ({ led: l.led, x: Number(l.x), y: Number(l.y) })).sort((a, b) => a.led - b.led),
   };
+  if (model) p.model = String(model).trim();
   if (!p.leds.length) throw new Error('Give at least one LED a position.');
+  if (p.model !== undefined && !isModelName(p.model)) throw new Error(`"${p.model}" isn't a casing model file name. Pick one from the list, like sota-pro-3.0_model2.casing.`);
   if (!isProfile(p)) throw new Error(`Each LED needs a number from 1 to ${count}, used once, with x and y in mm.`);
   return p;
 }
