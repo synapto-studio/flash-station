@@ -232,17 +232,9 @@ export function initRoutinesTab({ $, el, state }) {
   // file in the library's casings/ folder (made by the firmware repo's casing/tools/stl_to_web.py).
   // Same LED values as the drawing, the back LEDs too; both drives turn together; the cap is off, as
   // when it's plugged in.
-  const D3 = { want: true, on: false, seen: true, views: [], models: new Map(), opened: new Set(), turn: 0 };
+  const D3 = { want: true, on: false, seen: true, views: [], turn: 0 };
   const viewNote = (text) => { $('rtViewNote').textContent = text; };
-  function modelFor(name) {   // a Promise of the read model, read once
-    if (!D3.models.has(name)) {
-      const p = state.library ? state.library.readCasingModel(name)
-        : Promise.reject(new Error(`The 3D model ${name} isn't open: choose the library folder (Library tab) with it in casings/, or add the file under Drive profile.`));
-      D3.models.set(name, p);
-      p.catch(() => { if (D3.models.get(name) === p) D3.models.delete(name); });   // try again next time
-    }
-    return D3.models.get(name);
-  }
+  const modelFor = (name) => state.casings.open(name);   // read once, shared with the Flash Station card
   function paint3d(on) {   // true when it changed
     if (D3.on === on && $('rt3d').hidden === !on) return false;
     D3.on = on;
@@ -288,7 +280,7 @@ export function initRoutinesTab({ $, el, state }) {
     }
     let model;
     try {
-      if (!D3.models.has(name)) viewNote(`Opening ${name}…`);
+      if (!state.casings.has(name)) viewNote(`Opening ${name}…`);
       model = await modelFor(name);
       if (turn !== D3.turn) return;
       if (!D3.views.length) { paint3d(true); makeViews(model); }
@@ -312,7 +304,7 @@ export function initRoutinesTab({ $, el, state }) {
   async function loadModels() {
     const sel = $('rtProfModel'), cur = profile[family].model;
     const names = new Set(state.library ? await state.library.casingModels() : []);
-    for (const n of D3.opened) names.add(n);
+    for (const n of state.casings.opened) names.add(n);
     if (cur) names.add(cur);   // the profile's own, even when the file is missing (the note says so)
     sel.replaceChildren(el('option', { value: '', text: names.size ? 'None: the drawing' : 'None in the library yet' }));
     [...names].sort().forEach((n) => sel.append(el('option', { value: n, text: n })));
@@ -555,9 +547,8 @@ export function initRoutinesTab({ $, el, state }) {
       else {
         if (!isModelName(file.name)) throw new Error('That isn\'t a casing model. Its name ends in .casing (like sota-pro-3.0_model2.casing).');
         model = readCasing(bytes);
-        D3.opened.add(file.name);
       }
-      D3.models.set(file.name, Promise.resolve(model));
+      state.casings.keep(file.name, model, { forSession: !state.library });
       profile[family].model = file.name;
       D3.want = true;
       await loadModels();

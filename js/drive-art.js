@@ -25,6 +25,26 @@ function el(name, attrs = {}, parent) {
   return e;
 }
 
+// The steady look from a set of settings, LED by LED: [[n, rgb, level 0-1], ...] (the drawing and
+// the 3D drive card, js/card-3d.js, both light it).
+export function steadyLeds(family, settings) {
+  const lay = LAYOUTS[family] || LAYOUTS.pulse;
+  const b = (settings && settings.brightness != null ? settings.brightness : 255) / 255;
+  const red = (settings && settings.red) || [255, 0, 0];
+  const orange = (settings && settings.orange) || [255, 45, 0];
+  const mixed = red.map((c, i) => Math.round((c + orange[i]) / 2));
+  return Object.keys(lay.leds).map((n) => {
+    const sec = lay.section[n];
+    let rgb = red, lvl = 0.8;
+    if (family === 'pulse') {
+      if (sec === 'bottom') [rgb, lvl] = [mixed, (settings?.bottomLevel ?? 170) / 255];
+      if (sec === 'middle') lvl = (settings?.middleLevel ?? 80) / 255;
+      if (sec === 'top') lvl = (settings?.topHigh ?? 215) / 255;
+    } else if (sec === 'outer') rgb = mixed;
+    return [Number(n), rgb, Math.max(0.15, lvl * b)];
+  });
+}
+
 export class DriveArt {
   constructor(svg) {
     this.svg = svg;
@@ -117,21 +137,7 @@ export class DriveArt {
   // The steady look from a set of settings (a still frame, not the animation).
   steady(settings) {
     this.mode('');
-    const lay = LAYOUTS[this.family];
-    const b = (settings && settings.brightness != null ? settings.brightness : 255) / 255;
-    const red = (settings && settings.red) || [255, 0, 0];
-    const orange = (settings && settings.orange) || [255, 45, 0];
-    const mixed = red.map((c, i) => Math.round((c + orange[i]) / 2));
-    for (const n of Object.keys(this.leds)) {
-      const sec = lay.section[n];
-      let rgb = red, lvl = 0.8;
-      if (this.family === 'pulse') {
-        if (sec === 'bottom') [rgb, lvl] = [mixed, (settings?.bottomLevel ?? 170) / 255];
-        if (sec === 'middle') lvl = (settings?.middleLevel ?? 80) / 255;
-        if (sec === 'top') lvl = (settings?.topHigh ?? 215) / 255;
-      } else if (sec === 'outer') rgb = mixed;
-      this.setLed(n, rgb, Math.max(0.15, lvl * b));
-    }
+    for (const [n, rgb, lvl] of steadyLeds(this.family, settings)) this.setLed(n, rgb, lvl);
   }
 
   fault() {
