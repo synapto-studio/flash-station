@@ -80,20 +80,24 @@ Jonny, next run: station 0.7 on the box (`station_0.7.uf2`), the Pulse A2 on pul
 
 Latest (28 Oct 2026, station 0.9): Pulse A2 recognised 7 of 7 (1 on pulsetest 1.12 sunset, 6 on 2.5), no phantom plug-ins. The 2.5 file was built before 1.12's one-copy ID and 8d's glow fade were merged in, so those still need a new engine 2 build. 8f is closed (5 Nov 2026): there will be no "2.6". Engine 2 gets a new name and number, and the two fixes go into that build (firmware repo roadmap task 12).
 
-### 9. A public page (planning with Jonny, 5 Nov 2026; nothing built)
-Today's app is for Jonny (admin and development). A public page joins the Flash Station and a very basic Routines into one, with as little on it as possible. **Decided so far (Jonny, 5 Nov 2026):**
-- For now it's **a new tab on this site** that acts as its own page; no new website yet.
+### 9. Studio, the public page (planning with Jonny, 5-6 Nov 2026; nothing built)
+Today's app is for Jonny (admin and development). **Studio** joins the Flash Station and a very basic Routines into one page, with as little on it as possible. **Decided so far (Jonny):**
+- For now it's **a tab called Studio** on this site that acts as its own page. Later it *is* the page (no tab), and "Lighting Studio" once the company website with products launches.
 - Background: a white radial gradient (strongest in the middle) that pulses in time with the box, with a faint grid over it. **Later goal:** the box's own lights pulse with the screen too (a station firmware change).
 - The drive pops up on screen when it's plugged in (the 3D card, `js/card-3d.js`).
-- Tabs that open and close: **Song moments and light cues** (Pulse only; shown, not hidden: build it as if for full working drives, probably Pulse B), **Colour sets** (a few presets, plus a simple, friendly way to make new ones), and **When it's plugged into a normal USB port** (the start-up look). Pulse gets all 3; Core gets the last 2.
+- Tabs that open and close: **Song moments and light cues** (Pulse only; shown, not hidden: build it as if for full working drives, probably Pulse B), **Colour sets** (a few presets, plus a simple, friendly way to make new ones), and the **intro** the drive plays when plugged in anywhere but a Flash Station (every other port counts as being in the decks; not a "normal USB port" tab). Pulse gets all 3; Core gets the last 2.
 - A small 3-way switch: **Current / New / Both** (both = two drives side by side). It moves to New once anything is changed. The page shows the name of the current lighting and of the new one.
 - A **Flash** button, on the right (top or bottom: to decide).
-- Borrow from DJ, lighting and music-production apps throughout (e.g. their usual keyboard shortcuts).
-- Shown with two drives: a Pulse on **Pulse demo** (song moments, colours) and a second Pulse (routines, colour sets, in step with the screen's pulse).
-Still open (asked in that chat): whether it works without a box, lighting names, what the start-up tab lets people do, which engine the second Pulse runs, and what of the public repo should stay public.
+- Model it on **Ableton and FL Studio** (the DAWs most big DJs use), not rekordbox: their keyboard shortcuts and ways of working, throughout.
+- Shown with two Pulses: one on **Pulse demo** (song moments, colours), one on **Pulse engine 2.0** (colour sets, the intro, in step with the screen's pulse).
+- Engines never reach the browser: a lighting change only needs a short summary of the engine (its checksum state, ~80 bytes, no code). To check in simulation first.
+Still open (asked 6 Nov 2026): what the intro tab lets people do; whether it works without a box and how lighting is named (Claude's suggestion: yes without a box, the Flash only needs one; names remembered in the browser).
 
-### 10. A Versions tab (admin, planning, 5 Nov 2026)
-Jonny wants the list of what exists and what's planned (drive models and casing releases, boards, engines, demos, station) on the admin website, not on GitHub, plus each drive's record (casing, board, memory stick, engine and lighting). The page's code is public; the contents must not be: they come from the library folder or the private firmware repo, never from this repo. How the site gets them is still to decide (asked in that chat).
+### 10. A Versions tab (admin, planning, 5-6 Nov 2026)
+Jonny wants the list of what exists and what's planned (drive models and casing releases, boards, engines, demos, station) on the admin website, not on GitHub, plus each drive's record (casing release and odd parts, board, memory stick, engine and lighting). **Decided (Jonny, 6 Nov 2026): way b.** Jonny pastes a read-only GitHub key (for the private firmware repo only) into the admin site once; it then fetches the versions list and the engine files from the firmware repo itself, so .hex files no longer need copying into the library by hand. The page's code holds no contents.
+
+### 11. Take the code off the internet (planning, 6 Nov 2026)
+Jonny (6 Nov 2026): keep the code private. The repo has been public since 12 Oct 2026, so what's been pushed may already be copied; making it private stops it from now on. GitHub Pages can't serve a private repo on the free plan (the site would stop), and even a paid plan can't put a login in front of the site. Plan (not yet agreed): host on Cloudflare Pages (free; it can build from a private GitHub repo) with Cloudflare Access (free login for up to 50 people) in front of the admin app; Studio later as its own public site holding only its own files (no docs, tests or tools). Order: Cloudflare site and login first, check Web Serial and the library folder work there, save any Light cues timelines as animations (browser-kept data doesn't move to a new address), then make the repo private (the github.io link stops). Jonny does the account clicks; a session walks him through. Then update both `CLAUDE.md` files (no longer "this repo is public").
 
 ## Later
 - Pulse engine 2: effects instead of fixed animations. Looping layers (shape, speed in bars, two colours, which LEDs, spread plug→logo) for standard and beat; a short step list for load-up.
